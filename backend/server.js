@@ -47,6 +47,8 @@ app.use(express.json());
 app.use(cors());
 
 console.log('--- INICIANDO SERVIDOR SISTEMA DE VENTAS V2.2 (DEBUG MODE) ---');
+console.log('Current working directory:', process.cwd());
+console.log('__dirname:', __dirname);
 
 // Variable para cachear el offset (se actualiza al cambiarlo)
 let currentOffset = -6;
@@ -500,8 +502,24 @@ cron.schedule('0 12 * * *', async () => {
 });
 
   // Servir archivos estáticos del frontend (para Render)
-  const frontendPath = path.join(__dirname, '..', 'dist');
-  if (fs.existsSync(frontendPath)) {
+  // Intentamos buscar la carpeta dist en varios lugares posibles
+  const possiblePaths = [
+    path.join(__dirname, '..', 'dist'),
+    path.join(process.cwd(), '..', 'dist'),
+    path.join(process.cwd(), 'dist'),
+    path.join(__dirname, 'dist')
+  ];
+
+  let frontendPath = null;
+  for (const p of possiblePaths) {
+    console.log(`Buscando frontend en: ${p}`);
+    if (fs.existsSync(p) && fs.existsSync(path.join(p, 'index.html'))) {
+      frontendPath = p;
+      break;
+    }
+  }
+
+  if (frontendPath) {
     app.use(express.static(frontendPath));
     // Catch-all: cualquier ruta no-API sirve index.html (SPA)
     app.get('*', (req, res, next) => {
@@ -511,7 +529,13 @@ cron.schedule('0 12 * * *', async () => {
         next();
       }
     });
-    console.log('Frontend estático servido desde:', frontendPath);
+    console.log('✅ Frontend estático detectado y servido desde:', frontendPath);
+  } else {
+    console.error('❌ ERROR: No se encontró la carpeta "dist" con index.html en ninguna de las rutas probadas.');
+    // Ruta mínima para que al menos no diga "Cannot GET /" si falla la detección
+    app.get('/', (req, res) => {
+      res.send('Servidor activo, pero no se encontró la interfaz (carpeta dist). Revisa los logs de Render.');
+    });
   }
 
 // --- MIDDLEWARE DE ERROR GLOBAL (DEBE IR AL FINAL) ---
