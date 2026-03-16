@@ -55,7 +55,13 @@ import logoImage from '/Gemini_Generated_Image_tlsnlhtlsnlhtlsn.png?url'; // Imp
 // En un entorno real, esto se reemplaza por llamadas a la API (fetch/axios).
 // Hemos preparado el código para que funcione visualmente ahora mismo.
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// Determinar la URL del API
+// Si tenemos una variable de entorno, la usamos.
+// Si no, y estamos en producción web, usamos rutas relativas.
+// Si estamos en desarrollo local, usamos localhost:3001.
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? '' : 'http://localhost:3001');
+console.log('--- SISTEMA INICIALIZADO ---');
+console.log('API_BASE_URL:', API_BASE_URL || '(relativa)');
 
 // Formato de moneda para Nicaragua
 const formatCurrency = (amount) => {

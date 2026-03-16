@@ -64,11 +64,14 @@ const loadOffset = async () => {
 let serverReady = false;
 const initPromise = (async () => {
   try {
+    console.log('Iniciando inicialización de base de datos...');
     await initDb();
+    console.log('Base de datos inicializada.');
     await loadOffset();
+    console.log('Configuraciones cargadas.');
     serverReady = true;
   } catch (err) {
-    console.error('ERROR CRÍTICO al inicializar:', err);
+    console.error('ERROR CRÍTICO al inicializar en initPromise:', err);
     process.exit(1);
   }
 })();
@@ -105,7 +108,12 @@ const authorizeRole = (...roles) => {
 
 app.post('/api/login', async (req, res, next) => {
   const { email, password } = req.body;
+  console.log(`Intento de login para: ${email}`);
   try {
+    if (!serverReady) {
+       console.log('Login rechazado: El servidor aún no está listo.');
+       return res.status(503).json({ message: 'El servidor se está iniciando, por favor espera unos segundos.' });
+    }
     const user = await getUserByEmail(email);
     if (!user || user.status !== 'active') {
       return res.status(401).json({ message: 'Credenciales incorrectas o usuario inactivo.' });
@@ -491,6 +499,21 @@ cron.schedule('0 12 * * *', async () => {
   timezone: "America/Managua"
 });
 
+  // Servir archivos estáticos del frontend (para Render)
+  const frontendPath = path.join(__dirname, '..', 'dist');
+  if (fs.existsSync(frontendPath)) {
+    app.use(express.static(frontendPath));
+    // Catch-all: cualquier ruta no-API sirve index.html (SPA)
+    app.get('*', (req, res, next) => {
+      if (!req.path.startsWith('/api')) {
+        res.sendFile(path.join(frontendPath, 'index.html'));
+      } else {
+        next();
+      }
+    });
+    console.log('Frontend estático servido desde:', frontendPath);
+  }
+
 // --- MIDDLEWARE DE ERROR GLOBAL (DEBE IR AL FINAL) ---
 app.use((err, req, res, next) => {
   const errorLog = `[${new Date().toISOString()}] ERROR DETECTADO: ${err.stack}\n`;
@@ -509,19 +532,6 @@ app.use((err, req, res, next) => {
     code: 'INTERNAL_SERVER_ERROR'
   });
 });
-
-  // Servir archivos estáticos del frontend (para Render)
-  const frontendPath = path.join(__dirname, '..', 'dist');
-  if (fs.existsSync(frontendPath)) {
-    app.use(express.static(frontendPath));
-    // Catch-all: cualquier ruta no-API sirve index.html (SPA)
-    app.get('*', (req, res) => {
-      if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(frontendPath, 'index.html'));
-      }
-    });
-    console.log('Frontend estático servido desde:', frontendPath);
-  }
 
   // Esperar a que la BD se inicialice antes de escuchar peticiones
   initPromise.then(() => {
