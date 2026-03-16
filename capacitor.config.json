@@ -1,0 +1,11 @@
+{
+  "appId": "com.sistemaventas.app",
+  "appName": "Sistema de Ventas",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

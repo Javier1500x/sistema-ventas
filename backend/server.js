@@ -1,0 +1,506 @@
+require('dotenv').config();
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const cors = require('cors');
+const axios = require('axios');
+const bcrypt = require('bcryptjs'); // Usar bcryptjs para evitar errores de módulos nativos en Electron
+const {
+  initDb,
+  insertSale,
+  getAllSales,
+  getSaleByTransactionId,
+  cancelSaleByTransactionId,
+  addCashTransaction,
+  getTodaysCashTransactions,
+  clearTodaysCashTransactions,
+  clearTodaysSales,
+  getUserByEmail,
+  getAllUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  getAllProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  updateProductStock,
+  getAllSuppliers,
+  createSupplier,
+  updateSupplier,
+  deleteSupplier,
+  recordPurchase,
+  getCashClosingByDate,
+  upsertCashClosing,
+  getSetting,
+  updateSetting
+} = require('./database');
+const { getDailySummary, getSalesChartData } = require('./decisionEngine');
+const { sendWhatsAppMessage, sendLowStockAlert } = require('./notificationService');
+const cron = require('node-cron');
+const { generateDailyReportText, generateDailyReportPDF } = require('./reportService');
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
+app.use(express.json());
+app.use(cors());
+
+console.log('--- INICIANDO SERVIDOR SISTEMA DE VENTAS V2.2 (DEBUG MODE) ---');
+
+// Variable para cachear el offset (se actualiza al cambiarlo)
+let currentOffset = -6;
+
+// Función para cargar el offset al inicio
+const loadOffset = async () => {
+  try {
+    const offset = await getSetting('time_offset');
+    if (offset !== null) currentOffset = parseFloat(offset);
+  } catch (err) {
+    console.error('Error loading time offset:', err);
+  }
+};
+// Inicializar base de datos al arrancar
+initDb();
+loadOffset();
+
+// Función para obtener la fecha actual en UTC ISO (para almacenamiento)
+const getUTCDateISO = () => {
+  return new Date().toISOString();
+};
+
+const jwt = require('jsonwebtoken');
+const SECRET_KEY = process.env.JWT_SECRET || 'your-secret-key-for-sales-system-2024';
+
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.status(401).json({ message: 'No se encontró el token de autenticación.' });
+
+  jwt.verify(token, SECRET_KEY, (err, user) => {
+    if (err) return res.status(403).json({ message: 'Token inválido o expirado.' });
+    req.user = user;
+    next();
+  });
+};
+
+const authorizeRole = (...roles) => {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ message: 'No tienes permisos para realizar esta acción.' });
+    }
+    next();
+  };
+};
+
+app.post('/api/login', async (req, res, next) => {
+  const { email, password } = req.body;
+  try {
+    const user = await getUserByEmail(email);
+    if (!user || user.status !== 'active') {
+      return res.status(401).json({ message: 'Credenciales incorrectas o usuario inactivo.' });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ message: 'Credenciales incorrectas.' });
+    }
+
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, SECRET_KEY, { expiresIn: '8h' });
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/users', authenticateToken, authorizeRole('admin'), async (req, res, next) => {
+  try {
+    const users = await getAllUsers();
+    res.json(users);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/users', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    const { password, ...userData } = req.body;
+    const password_hash = await bcrypt.hash(password, 10);
+    const userId = await createUser({ ...userData, password_hash });
+    res.status(201).json({ message: 'Usuario creado con éxito', userId });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al crear usuario.' });
+  }
+});
+
+app.put('/api/users/:id', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    const { password, ...userData } = req.body;
+    if (password) {
+      userData.password_hash = await bcrypt.hash(password, 10);
+    }
+    await updateUser(req.params.id, userData);
+    res.json({ message: 'Usuario actualizado con éxito' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar usuario.' });
+  }
+});
+
+app.delete('/api/users/:id', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    await deleteUser(req.params.id);
+    res.json({ message: 'Usuario desactivado con éxito' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al eliminar usuario.' });
+  }
+});
+
+app.get('/api/products', authenticateToken, async (req, res) => {
+  try {
+    const products = await getAllProducts();
+    res.status(200).json(products);
+  } catch (error) {
+    console.error('Error al obtener productos:', error);
+    res.status(500).json({ message: 'Error en el servidor al obtener productos.', error: error.message });
+  }
+});
+
+app.post('/api/products', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    const newProduct = await createProduct(req.body);
+    res.status(201).json({ message: 'Producto creado con éxito.', product: newProduct });
+  } catch (error) {
+    console.error('Error al crear producto:', error);
+    res.status(500).json({ message: 'Error en el servidor al crear producto.', error: error.message });
+  }
+});
+
+app.put('/api/products/:id', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    const updatedProduct = await updateProduct(req.params.id, req.body);
+    res.status(200).json({ message: 'Producto actualizado con éxito.', product: updatedProduct });
+  } catch (error) {
+    console.error('Error al actualizar producto:', error);
+    res.status(500).json({ message: 'Error en el servidor al actualizar producto.', error: error.message });
+  }
+});
+
+app.delete('/api/products/:id', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    const result = await deleteProduct(req.params.id);
+    if (result.changes === 0) {
+      return res.status(404).json({ message: 'Producto no encontrado.' });
+    }
+    res.status(200).json({ message: 'Producto eliminado con éxito.' });
+  } catch (error) {
+    console.error('Error al eliminar producto:', error);
+    res.status(500).json({ message: 'Error en el servidor al eliminar producto.', error: error.message });
+  }
+});
+
+app.post('/api/record-sale', async (req, res) => {
+  try {
+    const { productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount } = req.body;
+    if (!productId || !quantity || !price || !transactionId || !paymentMethod) {
+      return res.status(400).json({ message: 'Datos de venta incompletos o falta transactionId.' });
+    }
+
+    const date = getUTCDateISO();
+    if (paymentMethod === 'Efectivo') {
+      await addCashTransaction(price * quantity, `Venta en Efectivo (Transacción #${String(transactionId).slice(-5)})`, 'entry', date);
+    }
+
+    const result = await insertSale({ productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount, date });
+
+    // --- Notificación de Stock Bajo (CallMeBot WhatsApp + Reporte Completo) ---
+    try {
+      const products = await getAllProducts();
+      const product = products.find(p => String(p.id) === String(productId));
+
+      if (product && product.stock <= 5) {
+        const phone = await getSetting('notification_phone') || "+50585853867";
+        const apiKey = await getSetting('callmebot_apikey');
+
+        if (phone && apiKey) {
+          sendLowStockAlert(phone, apiKey, productName, product.stock)
+            .catch(err => console.error('Error in sendLowStockAlert WhatsApp:', err));
+
+          const fullReport = await generateDailyReportText();
+          const alertMsg = `🚨 *ALERTA DE STOCK CRÍTICO* 🚨\n\nEl producto *${productName}* llegó a ${product.stock} unidades.\n\n${fullReport}`;
+
+          sendWhatsAppMessage(phone, apiKey, alertMsg)
+            .catch(err => console.error('Error in Detailed Stock Alert WhatsApp:', err));
+        }
+      }
+    } catch (notifyError) {
+      console.error('Failed to process low stock notification:', notifyError);
+    }
+
+    res.status(201).json({ message: 'Venta registrada con éxito', saleId: result.id });
+  } catch (error) {
+    res.status(500).json({ message: 'Error en el servidor al registrar la venta', error });
+  }
+});
+
+app.get('/api/sales-history', async (req, res) => {
+  try {
+    const sales = await getAllSales();
+    res.status(200).json(sales);
+  } catch (error) {
+    console.error('Error al obtener el historial de ventas:', error);
+    res.status(500).json({ message: 'Error en el servidor al obtener el historial de ventas', error });
+  }
+});
+
+app.post('/api/cancel-sale/:transactionId', async (req, res) => {
+  try {
+    const { transactionId } = req.params;
+    const saleToCancel = await getSaleByTransactionId(transactionId);
+    if (!saleToCancel || saleToCancel.length === 0) return res.status(404).json({ message: 'Venta no encontrada.' });
+
+    for (const itemInSale of saleToCancel) {
+      await updateProductStock(itemInSale.productId, itemInSale.quantity);
+    }
+
+    const firstItem = saleToCancel[0];
+    if (firstItem.paymentMethod === 'Efectivo') {
+      const totalAmount = saleToCancel.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+      const date = getUTCDateISO();
+      await addCashTransaction(-totalAmount, `Cancelación de Venta (Transacción #${String(transactionId).slice(-5)})`, 'expense', date);
+    }
+
+    await cancelSaleByTransactionId(transactionId);
+    res.status(200).json({ message: 'Venta cancelada con éxito y stock devuelto.' });
+  } catch (error) {
+    console.error('Error al cancelar la venta:', error);
+    res.status(500).json({ message: 'Error en el servidor al cancelar la venta.', error });
+  }
+});
+
+app.get('/api/cash-transactions/today', async (req, res) => {
+  try {
+    const transactions = await getTodaysCashTransactions(currentOffset);
+    res.status(200).json(transactions);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener transacciones de caja.' });
+  }
+});
+
+app.post('/api/cash-transactions', async (req, res) => {
+  try {
+    const { amount, description, type } = req.body;
+    const date = getUTCDateISO();
+    await addCashTransaction(amount, description, type, date);
+    res.status(201).json({ message: 'Transacción de caja registrada con éxito.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al registrar transacción de caja.' });
+  }
+});
+
+app.get('/api/suppliers', async (req, res) => {
+  try {
+    const suppliers = await getAllSuppliers();
+    res.json(suppliers);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener proveedores.' });
+  }
+});
+
+app.post('/api/suppliers', async (req, res) => {
+  try {
+    const supplierId = await createSupplier(req.body);
+    res.status(201).json({ id: supplierId, message: 'Proveedor creado con éxito' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al crear proveedor.' });
+  }
+});
+
+app.put('/api/suppliers/:id', async (req, res) => {
+  try {
+    await updateSupplier(req.params.id, req.body);
+    res.json({ message: 'Proveedor actualizado con éxito' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar proveedor.' });
+  }
+});
+
+app.delete('/api/suppliers/:id', async (req, res) => {
+  try {
+    await deleteSupplier(req.params.id);
+    res.json({ message: 'Proveedor eliminado con éxito' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al eliminar proveedor.' });
+  }
+});
+
+app.post('/api/purchases', async (req, res) => {
+  try {
+    const purchaseId = await recordPurchase(req.body);
+    res.status(201).json({ id: purchaseId, message: 'Compra registrada con éxito y stock actualizado.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al registrar compra.' });
+  }
+});
+
+app.get('/api/cash-closings/date/:date', async (req, res) => {
+  try {
+    const closing = await getCashClosingByDate(req.params.date);
+    res.json(closing);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener cierre de caja.' });
+  }
+});
+
+app.post('/api/cash-closings', async (req, res) => {
+  try {
+    await upsertCashClosing(req.body);
+    res.json({ message: 'Cierre de caja guardado con éxito.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al guardar cierre de caja.' });
+  }
+});
+
+app.get('/api/settings', async (req, res) => {
+  try {
+    const time_offset = await getSetting('time_offset');
+    const notification_phone = await getSetting('notification_phone');
+    const callmebot_apikey = await getSetting('callmebot_apikey');
+    res.json({
+      time_offset: time_offset || "-6",
+      notification_phone: notification_phone || '',
+      callmebot_apikey: callmebot_apikey || ''
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener configuraciones' });
+  }
+});
+
+app.post('/api/settings', async (req, res) => {
+  try {
+    const { time_offset, notification_phone, callmebot_apikey } = req.body;
+    if (time_offset !== undefined) {
+      await updateSetting('time_offset', time_offset);
+      currentOffset = parseFloat(time_offset);
+    }
+    if (notification_phone !== undefined) await updateSetting('notification_phone', notification_phone);
+    if (callmebot_apikey !== undefined) await updateSetting('callmebot_apikey', callmebot_apikey);
+    res.json({ message: 'Configuración actualizada' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar configuraciones' });
+  }
+});
+
+app.post('/api/clear-test-data', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    await clearTodaysSales();
+    await clearTodaysCashTransactions();
+    res.status(200).json({ message: 'Datos de prueba eliminados.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al eliminar datos de prueba.' });
+  }
+});
+
+app.get('/api/daily-summary', async (req, res) => {
+  try {
+    const summary = await getDailySummary();
+    res.status(200).json(summary);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener el resumen diario', error });
+  }
+});
+
+app.get('/api/dashboard-charts', async (req, res) => {
+  try {
+    const chartData = await getSalesChartData();
+    res.status(200).json(chartData);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener datos para gráficos.' });
+  }
+});
+
+app.post('/api/send-report', async (req, res) => {
+  try {
+    const phone = await getSetting('notification_phone') || "+50585853867";
+    const apiKey = await getSetting('callmebot_apikey');
+    if (phone && apiKey) {
+      const reportText = await generateDailyReportText();
+      const finalMsg = `📑 *REPORTE SOLICITADO MANUALMENTE* 📑\n\n${reportText}`;
+      await sendWhatsAppMessage(phone, apiKey, finalMsg);
+      res.json({ message: 'Reporte enviado con éxito vía WhatsApp' });
+    } else {
+      res.status(400).json({ message: 'WhatsApp o API Key no configurados' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Error al enviar reporte' });
+  }
+});
+
+app.get('/api/generate-only-report', async (req, res) => {
+  try {
+    const report = await generateDailyReportText();
+    res.json({ report });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al generar reporte' });
+  }
+});
+
+app.get('/api/reports/pdf', async (req, res) => {
+  try {
+    const offset = await getSetting('time_offset');
+    const numericOffset = offset !== null ? parseFloat(offset) : -6;
+    const today = new Date(Date.now() + (numericOffset * 3600000)).toISOString().split('T')[0];
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=Reporte_Ventas_${today}.pdf`);
+
+    await generateDailyReportPDF(res);
+  } catch (error) {
+    console.error('Error serving PDF report:', error);
+    if (!res.headersSent) {
+      res.status(500).send('Error al generar el reporte PDF');
+    }
+  }
+});
+
+cron.schedule('0 12 * * *', async () => {
+  console.log('Ejecutando tarea programada: Reporte Diario 12:00 PM');
+  try {
+    const phone = await getSetting('notification_phone') || "+50585853867";
+    const apiKey = await getSetting('callmebot_apikey');
+    if (phone && apiKey) {
+      const reportText = await generateDailyReportText();
+      const finalMsg = `🕛 *REPORTE AUTOMÁTICO DE MEDIODÍA* 🕛\n\n${reportText}`;
+      await sendWhatsAppMessage(phone, apiKey, finalMsg);
+      console.log('Reporte diario enviado con éxito.');
+    }
+  } catch (error) {
+    console.error('Error en el cron de reporte diario:', error);
+  }
+}, {
+  scheduled: true,
+  timezone: "America/Managua"
+});
+
+// --- MIDDLEWARE DE ERROR GLOBAL (DEBE IR AL FINAL) ---
+app.use((err, req, res, next) => {
+  const errorLog = `[${new Date().toISOString()}] ERROR DETECTADO: ${err.stack}\n`;
+  console.error(errorLog);
+  try {
+    const logPath = process.env.DB_PATH ? path.join(path.dirname(process.env.DB_PATH), 'server_error.log') : 'server_error.log';
+    fs.appendFileSync(logPath, errorLog);
+  } catch (e) {
+    console.error('No se pudo escribir en el log de errores:', e.message);
+  }
+
+  // Enviar el detalle del error al cliente para depuración
+  res.status(500).json({
+    message: 'Error interno del servidor. Por favor, contacte al soporte técnico.',
+    error: err.message,
+    code: 'INTERNAL_SERVER_ERROR'
+  });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor de ventas corriendo en http://localhost:${PORT}`);
+});

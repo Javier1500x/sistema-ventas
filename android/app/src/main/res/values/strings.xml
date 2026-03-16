@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Sistema de Ventas</string>
+    <string name="title_activity_main">Sistema de Ventas</string>
+    <string name="package_name">com.sistemaventas.app</string>
+    <string name="custom_url_scheme">com.sistemaventas.app</string>
+</resources>
