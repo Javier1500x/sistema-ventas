@@ -4,9 +4,9 @@ services:
     env: node
     region: oregon
     plan: free
-    rootDir: backend
-    buildCommand: npm install
-    startCommand: npm start
+    rootDir: .
+    buildCommand: npm install && npm run build && cd backend && npm install
+    startCommand: cd backend && npm start
     envVars:
       - key: TURSO_DATABASE_URL
         sync: false

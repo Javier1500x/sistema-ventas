@@ -62,7 +62,8 @@ const initDb = async () => {
       manual_code TEXT UNIQUE,
       cost_price REAL DEFAULT 0,
       image TEXT,
-      supplier_id INTEGER
+      supplier_id INTEGER,
+      classification TEXT DEFAULT 'B'
     );
 
     CREATE TABLE IF NOT EXISTS suppliers (
@@ -186,20 +187,20 @@ const getAllProducts = async () => {
   return query('SELECT * FROM products', []);
 };
 
-const createProduct = async ({ name, price, stock, category, manual_code, image, supplier_id }) => {
+const createProduct = async ({ name, price, stock, category, manual_code, image, supplier_id, classification }) => {
   const result = await run(
-    'INSERT INTO products (name, price, stock, category, manual_code, cost_price, image, supplier_id) VALUES (?, ?, ?, ?, ?, 0, ?, ?)',
-    [name, price, stock, category, manual_code, image, supplier_id]
+    'INSERT INTO products (name, price, stock, category, manual_code, cost_price, image, supplier_id, classification) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)',
+    [name, price, stock, category, manual_code, image, supplier_id, classification || 'B']
   );
-  return { id: Number(result.lastInsertRowid), name, price, stock, category, manual_code, image, supplier_id };
+  return { id: Number(result.lastInsertRowid), name, price, stock, category, manual_code, image, supplier_id, classification };
 };
 
-const updateProduct = async (id, { name, price, stock, category, manual_code, image, supplier_id }) => {
+const updateProduct = async (id, { name, price, stock, category, manual_code, image, supplier_id, classification }) => {
   await run(
-    'UPDATE products SET name = ?, price = ?, stock = ?, category = ?, manual_code = ?, image = ?, supplier_id = ? WHERE id = ?',
-    [name, price, stock, category, manual_code, image, supplier_id, id]
+    'UPDATE products SET name = ?, price = ?, stock = ?, category = ?, manual_code = ?, image = ?, supplier_id = ?, classification = ? WHERE id = ?',
+    [name, price, stock, category, manual_code, image, supplier_id, classification || 'B', id]
   );
-  return { id, name, price, stock, category, manual_code, image, supplier_id };
+  return { id, name, price, stock, category, manual_code, image, supplier_id, classification };
 };
 
 const deleteProduct = async (id) => {

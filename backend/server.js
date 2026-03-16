@@ -60,9 +60,18 @@ const loadOffset = async () => {
     console.error('Error loading time offset:', err);
   }
 };
-// Inicializar base de datos al arrancar
-initDb();
-loadOffset();
+// Inicializar base de datos al arrancar (se espera antes de escuchar conexiones)
+let serverReady = false;
+const initPromise = (async () => {
+  try {
+    await initDb();
+    await loadOffset();
+    serverReady = true;
+  } catch (err) {
+    console.error('ERROR CRÍTICO al inicializar:', err);
+    process.exit(1);
+  }
+})();
 
 // Función para obtener la fecha actual en UTC ISO (para almacenamiento)
 const getUTCDateISO = () => {
@@ -501,6 +510,24 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor de ventas corriendo en http://localhost:${PORT}`);
-});
+  // Servir archivos estáticos del frontend (para Render)
+  const frontendPath = path.join(__dirname, '..', 'dist');
+  if (fs.existsSync(frontendPath)) {
+    app.use(express.static(frontendPath));
+    // Catch-all: cualquier ruta no-API sirve index.html (SPA)
+    app.get('*', (req, res) => {
+      if (!req.path.startsWith('/api')) {
+        res.sendFile(path.join(frontendPath, 'index.html'));
+      }
+    });
+    console.log('Frontend estático servido desde:', frontendPath);
+  }
+
+  // Esperar a que la BD se inicialice antes de escuchar peticiones
+  initPromise.then(() => {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Servidor de ventas corriendo en http://localhost:${PORT}`);
+    });
+  }).catch(err => {
+    console.error('Error al iniciar el servidor:', err);
+  });

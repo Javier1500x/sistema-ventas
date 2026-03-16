@@ -59,11 +59,12 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 // Formato de moneda para Nicaragua
 const formatCurrency = (amount) => {
+  const safeAmount = (amount === undefined || amount === null || isNaN(Number(amount))) ? 0 : Number(amount);
   return new Intl.NumberFormat('es-NI', {
     style: 'currency',
     currency: 'NIO',
     minimumFractionDigits: 2
-  }).format(amount);
+  }).format(safeAmount);
 };
 
 // Función para obtener la fecha actual ajustada según el offset configurado
