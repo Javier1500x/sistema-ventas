@@ -145,7 +145,7 @@ const seedInitialUsers = async () => {
 
 // --- Usuarios ---
 const getUserByEmail = async (email) => {
-  const rows = await query('SELECT * FROM users WHERE email = ? AND status = "active"', [email]);
+  const rows = await query("SELECT * FROM users WHERE email = ? AND status = 'active'", [email]);
   return rows[0] || null;
 };
 
@@ -177,7 +177,7 @@ const updateUser = async (id, { name, email, role, status, password }) => {
 };
 
 const deleteUser = async (id) => {
-  const result = await run('UPDATE users SET status = "inactive" WHERE id = ?', [id]);
+  const result = await run("UPDATE users SET status = 'inactive' WHERE id = ?", [id]);
   return { id, changes: result.rowsAffected };
 };
 
