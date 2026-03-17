@@ -502,9 +502,18 @@ cron.schedule('0 12 * * *', async () => {
 });
 
   // Servir archivos estáticos del frontend (para Render y Local)
+  const distPathCwd = path.join(process.cwd(), 'dist');
+  const distPathDirname = path.join(__dirname, '..', 'dist');
+  
+  console.log('--- RUTAS DE BÚSQUEDA ---');
+  console.log('Directorio actual (cwd):', process.cwd());
+  console.log('Directorio del script (__dirname):', __dirname);
+  console.log('Buscando en:', distPathCwd, '-> Existe?', fs.existsSync(distPathCwd));
+  console.log('Buscando en:', distPathDirname, '-> Existe?', fs.existsSync(distPathDirname));
+
   const possiblePaths = [
-    path.join(process.cwd(), 'dist'),
-    path.join(__dirname, '..', 'dist'),
+    distPathCwd,
+    distPathDirname,
     path.join(__dirname, 'www')
   ];
 
