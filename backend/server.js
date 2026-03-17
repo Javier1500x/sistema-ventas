@@ -44,7 +44,11 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 console.log('--- INICIANDO SERVIDOR SISTEMA DE VENTAS V2.2 (DEBUG MODE) ---');
 console.log('Current working directory:', process.cwd());
