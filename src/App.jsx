@@ -395,16 +395,25 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Si la App se inicializa y hay un usuario logueado, cargar los productos
-    if (user) { // Solo cargar si no se han cargado aún
-      if (products.length === 0) {
-        fetchProducts();
-      }
+    // Si la App se inicializa y hay un usuario logueado, cargar los datos
+    if (user) { 
+      // Carga inicial
+      fetchProducts();
       fetchSales();
       fetchSuppliers();
       fetchSettings();
+      
+      // Sincronización "Tiempo Real" (Polling cada 15 segundos)
+      const intervalId = setInterval(() => {
+        fetchProducts();
+        fetchSales();
+        fetchSuppliers();
+      }, 15000);
+      
+      // Limpiar intervalo si el usuario sale o el componente se desmonta
+      return () => clearInterval(intervalId);
     }
-  }, [user, products.length, fetchProducts, fetchSales, fetchSuppliers, fetchSettings]);
+  }, [user, fetchProducts, fetchSales, fetchSuppliers, fetchSettings]);
 
   // Persistent state for unique product codes
   const [nextManualCodeId, setNextManualCodeId] = usePersistentState('nextManualCodeId', 1);
