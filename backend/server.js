@@ -510,6 +510,15 @@ cron.schedule('0 12 * * *', async () => {
     path.join(__dirname, 'dist')
   ];
 
+  console.log('--- DIAGNÓSTICO DE CARPETAS ---');
+  try {
+    const parentDir = path.join(process.cwd(), '..');
+    console.log(`Contenido de ${parentDir}:`, fs.readdirSync(parentDir));
+    console.log(`Contenido de ${process.cwd()}:`, fs.readdirSync(process.cwd()));
+  } catch (e) {
+    console.log('No se pudo listar las carpetas:', e.message);
+  }
+
   let frontendPath = null;
   for (const p of possiblePaths) {
     console.log(`Buscando frontend en: ${p}`);
