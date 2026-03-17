@@ -501,26 +501,12 @@ cron.schedule('0 12 * * *', async () => {
   timezone: "America/Managua"
 });
 
-  // Servir archivos estáticos del frontend (para Render)
-  // Intentamos buscar la carpeta dist en varios lugares posibles
+  // Servir archivos estáticos del frontend (para Render y Local)
   const possiblePaths = [
-    path.join(__dirname, 'www'),         // /backend/www (Directo de Vite en Render)
-    path.join(__dirname, 'dist'),        // /backend/dist (Anterior)
-    path.join(__dirname, '..', 'dist'),  // /dist (Local)
     path.join(process.cwd(), 'dist'),
+    path.join(__dirname, '..', 'dist'),
+    path.join(__dirname, 'www')
   ];
-
-  console.log('--- DIAGNÓSTICO DE ÚLTIMA OPORTUNIDAD ---');
-  try {
-    const projectRoot = path.join(process.cwd(), '..');
-    console.log(`Contenido en ROOT (/src):`, fs.readdirSync(projectRoot));
-    console.log(`Contenido en BACKEND (/backend):`, fs.readdirSync(process.cwd()));
-    if (fs.existsSync(path.join(process.cwd(), 'dist'))) {
-        console.log(`Contenido de BACKEND/DIST:`, fs.readdirSync(path.join(process.cwd(), 'dist')));
-    }
-  } catch (e) {
-    console.log('No se pudo listar las carpetas:', e.message);
-  }
 
   let frontendPath = null;
   for (const p of possiblePaths) {
@@ -532,7 +518,6 @@ cron.schedule('0 12 * * *', async () => {
 
   if (frontendPath) {
     app.use(express.static(frontendPath));
-    // Catch-all: cualquier ruta no-API sirve index.html (SPA)
     app.get('*', (req, res, next) => {
       if (!req.path.startsWith('/api')) {
         res.sendFile(path.join(frontendPath, 'index.html'));
@@ -540,11 +525,11 @@ cron.schedule('0 12 * * *', async () => {
         next();
       }
     });
-    console.log('✅ UI detectada en:', frontendPath);
+    console.log('✅ UI servida desde:', frontendPath);
   } else {
-    console.error('❌ ERROR: No se encontró "dist/index.html".');
+    console.error('❌ ERROR: No se encontró la carpeta "dist".');
     app.get('/', (req, res) => {
-      res.send('Servidor activo. Error: No se encontró la carpeta "dist". Revisa el Build de Render.');
+      res.send('Servidor activo. Error: No se encontró la carpeta "dist".');
     });
   }
 

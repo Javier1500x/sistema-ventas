@@ -5,10 +5,6 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: './',
   plugins: [react()],
-  build: {
-    outDir: 'backend/www',
-    emptyOutDir: true
-  },
   css: {
     // Explicitly point to the PostCSS config file, which is now
     // correctly configured for Tailwind v3.
