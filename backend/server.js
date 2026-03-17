@@ -507,7 +507,20 @@ cron.schedule('0 12 * * *', async () => {
     path.join(__dirname, 'dist'),        // /backend/dist (donde lo movemos en Render)
     path.join(__dirname, '..', 'dist'),  // /dist (Local)
     path.join(process.cwd(), 'dist'),
+    path.join(process.cwd(), '..', 'dist')
   ];
+
+  console.log('--- DIAGNÓSTICO DE ÚLTIMA OPORTUNIDAD ---');
+  try {
+    const projectRoot = path.join(process.cwd(), '..');
+    console.log(`Contenido en ROOT (/src):`, fs.readdirSync(projectRoot));
+    console.log(`Contenido en BACKEND (/backend):`, fs.readdirSync(process.cwd()));
+    if (fs.existsSync(path.join(process.cwd(), 'dist'))) {
+        console.log(`Contenido de BACKEND/DIST:`, fs.readdirSync(path.join(process.cwd(), 'dist')));
+    }
+  } catch (e) {
+    console.log('No se pudo listar las carpetas:', e.message);
+  }
 
   let frontendPath = null;
   for (const p of possiblePaths) {
