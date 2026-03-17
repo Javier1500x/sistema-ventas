@@ -505,9 +505,13 @@ cron.schedule('0 12 * * *', async () => {
   // Intentamos buscar la carpeta dist en varios lugares posibles
   const possiblePaths = [
     path.join(__dirname, 'dist'),        // /backend/dist (donde lo movemos en Render)
+    path.join(__dirname, 'build_output'),
     path.join(__dirname, '..', 'dist'),  // /dist (Local)
+    path.join(__dirname, '..', 'build_output'),
     path.join(process.cwd(), 'dist'),
-    path.join(process.cwd(), '..', 'dist')
+    path.join(process.cwd(), 'build_output'),
+    path.join(process.cwd(), '..', 'dist'),
+    path.join(process.cwd(), '..', 'build_output')
   ];
 
   console.log('--- DIAGNÓSTICO DE ÚLTIMA OPORTUNIDAD ---');
