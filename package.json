@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:frontend\" \"npm start --prefix backend\"",
     "dev:frontend": "vite --host",
-    "build": "echo \"Starting Vite build\" && vite build && echo \"Vite build finished\" && ls -la dist",
+    "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "electron:dev": "cross-env NODE_ENV=development concurrently \"npm run dev:frontend\" \"wait-on http://localhost:5173 && electron .\"",
