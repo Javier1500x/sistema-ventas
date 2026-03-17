@@ -34,7 +34,9 @@ import {
   Send,
   FileText,
   Eye,
-  Download
+  Download,
+  Upload,
+  Image
 } from 'lucide-react';
 import {
   BarChart,
@@ -2269,21 +2271,41 @@ const InventoryView = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newProd, setNewProd] = useState({ name: '', price: '', stock: '', category: 'General', classification: 'B', manual_code: '', image: null, supplier_id: '' });
   const [searchTerm, setSearchTerm] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleFile = async (file, isEdit = false) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    try {
+      const base64 = await processImage(file);
+      if (isEdit) {
+        setEditingProduct({ ...editingProduct, image: base64 });
+      } else {
+        setNewProd({ ...newProd, image: base64 });
+      }
+    } catch (error) {
+      console.error("Error processing image", error);
+    }
+  };
+
+  const onDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const onDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const onDrop = (e, isEdit = false) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file, isEdit);
+  };
 
   const handleImageChange = async (e, isEdit = false) => {
     const file = e.target.files[0];
-    if (file) {
-      try {
-        const base64 = await processImage(file);
-        if (isEdit) {
-          setEditingProduct({ ...editingProduct, image: base64 });
-        } else {
-          setNewProd({ ...newProd, image: base64 });
-        }
-      } catch (error) {
-        console.error("Error processing image", error);
-      }
-    }
+    if (file) handleFile(file, isEdit);
   };
 
   const handleOpenEditModal = (product) => {
@@ -2484,12 +2506,38 @@ const InventoryView = ({
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-slate-700">Imagen</label>
-                  <input type="file" accept="image/*" className="w-full mt-1 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100" onChange={(e) => handleImageChange(e, false)} />
-                  {newProd.image && <img src={newProd.image} alt="Preview" className="h-16 mt-2 rounded object-cover border" />}
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="text-sm font-medium text-slate-700">Imagen del Producto</label>
+                  <div
+                    onDragOver={onDragOver}
+                    onDragLeave={onDragLeave}
+                    onDrop={(e) => onDrop(e, false)}
+                    className={`mt-1 relative border-2 border-dashed rounded-xl p-4 transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${isDragging ? 'border-violet-500 bg-violet-50' : 'border-slate-300 hover:border-violet-400 bg-slate-50'}`}
+                    onClick={() => document.getElementById('new-prod-image').click()}
+                  >
+                    <input
+                      id="new-prod-image"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleImageChange(e, false)}
+                    />
+                    {newProd.image ? (
+                      <div className="relative group">
+                        <img src={newProd.image} alt="Preview" className="h-24 w-24 object-cover rounded-lg border border-slate-200" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                          <Plus className="text-white" size={20} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <Upload className="mx-auto text-slate-400 mb-1" size={24} />
+                        <p className="text-[10px] text-slate-500">Arrastra o haz clic</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
+                <div className="col-span-2 sm:col-span-1">
                   <label className="text-sm font-medium text-slate-700">Clasificación</label>
                   <select required className="w-full border rounded-lg px-3 py-2 mt-1" value={newProd.classification} onChange={e => setNewProd({ ...newProd, classification: e.target.value })}>
                     <option value="B">Tipo B (Medio)</option>
@@ -2560,12 +2608,38 @@ const InventoryView = ({
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-slate-700">Imagen</label>
-                  <input type="file" accept="image/*" className="w-full mt-1 text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100" onChange={(e) => handleImageChange(e, true)} />
-                  {editingProduct.image && <img src={editingProduct.image} alt="Preview" className="h-16 mt-2 rounded object-cover border" />}
+                <div className="col-span-2 sm:col-span-1">
+                  <label className="text-sm font-medium text-slate-700">Imagen del Producto</label>
+                  <div
+                    onDragOver={onDragOver}
+                    onDragLeave={onDragLeave}
+                    onDrop={(e) => onDrop(e, true)}
+                    className={`mt-1 relative border-2 border-dashed rounded-xl p-4 transition-all flex flex-col items-center justify-center gap-2 cursor-pointer ${isDragging ? 'border-violet-500 bg-violet-50' : 'border-slate-300 hover:border-violet-400 bg-slate-50'}`}
+                    onClick={() => document.getElementById('edit-prod-image').click()}
+                  >
+                    <input
+                      id="edit-prod-image"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleImageChange(e, true)}
+                    />
+                    {editingProduct.image ? (
+                      <div className="relative group">
+                        <img src={editingProduct.image} alt="Preview" className="h-24 w-24 object-cover rounded-lg border border-slate-200" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                          <Pencil className="text-white" size={20} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <Upload className="mx-auto text-slate-400 mb-1" size={24} />
+                        <p className="text-[10px] text-slate-500">Arrastra o haz clic</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div>
+                <div className="col-span-2 sm:col-span-1">
                   <label className="text-sm font-medium text-slate-700">Clasificación</label>
                   <select required className="w-full border rounded-lg px-3 py-2 mt-1" value={editingProduct.classification || 'B'} onChange={e => setEditingProduct({ ...editingProduct, classification: e.target.value })}>
                     <option value="B">Tipo B (Medio)</option>
