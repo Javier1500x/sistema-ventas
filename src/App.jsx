@@ -275,8 +275,12 @@ export default function App() {
           'x-user-role': user.role
         }
       });
-      const data = await response.json();
-      setSuppliers(data);
+      if (response.ok) {
+        const data = await response.json();
+        setSuppliers(data);
+      } else {
+        console.error('Error fetching suppliers:', response.status);
+      }
     } catch (error) {
       console.error('Error fetching suppliers:', error);
     }
@@ -431,43 +435,54 @@ export default function App() {
   // --- Efecto para Bienvenida por Voz y Notificación simulada ---
   useEffect(() => {
     if (user && !hasWelcomed) {
-      // 1. Bienvenida por voz
-      const welcomeMessage = new SpeechSynthesisUtterance("Bienvenido al sistema de ventas");
-      welcomeMessage.lang = 'es-ES';
-      window.speechSynthesis.speak(welcomeMessage);
+      console.log('--- BIENVENIDA POST-LOGIN ---');
+      // 1. Bienvenida por voz con protección total
+      try {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel(); // Detener cualquier voz previa
+          const welcomeMessage = new SpeechSynthesisUtterance("Bienvenid@ al sistema de ventas");
+          welcomeMessage.lang = 'es-ES';
+          welcomeMessage.rate = 1;
+          window.speechSynthesis.speak(welcomeMessage);
+        }
+      } catch (speechError) {
+        console.warn('SpeechSynthesis no disponible o falló:', speechError);
+      }
+      
       setHasWelcomed(true);
 
       // 2. Simulación de notificación de stock bajo
       const timer = setTimeout(() => {
-        const lowStockProducts = products.filter(p => p.stock > 0 && p.stock < 10);
+        try {
+          const lowStockProducts = products.filter(p => p.stock > 0 && p.stock < 10);
+          const newNotifications = [];
 
-        const newNotifications = [];
-
-        if (lowStockProducts.length > 0) {
-          lowStockProducts.forEach(p => {
-            newNotifications.push({
-              id: `stock-${p.id}`,
-              icon: AlertCircle,
-              title: "Inventario bajo",
-              message: `Quedan ${p.stock} unidades de '${p.name}'`,
-              details: `Categoría: ${p.category}\nPrecio: ${formatCurrency(p.price)}`
+          if (lowStockProducts.length > 0) {
+            lowStockProducts.forEach(p => {
+              newNotifications.push({
+                id: `stock-${p.id}`,
+                icon: AlertCircle,
+                title: "Inventario bajo",
+                message: `Quedan ${p.stock} unidades de '${p.name}'`,
+                details: `Categoría: ${p.category}\nPrecio: ${formatCurrency(p.price)}`
+              });
             });
+          }
+
+          newNotifications.push({
+            id: 'welcome',
+            icon: TrendingUp,
+            title: "¡Sistema listo!",
+            message: "Todo listo para empezar a vender.",
+            details: "Esta es tu central de notificaciones. Aquí recibirás alertas importantes sobre tu inventario."
           });
+
+          setBellNotifications(prev => [...prev, ...newNotifications]);
+        } catch (notifError) {
+          console.error("Error al procesar notificaciones iniciales:", notifError);
         }
-
-        // Añadir una notificación de bienvenida para demostración
-        newNotifications.push({
-          id: 'welcome',
-          icon: TrendingUp,
-          title: "¡Sistema listo!",
-          message: "Todo listo para empezar a vender.",
-          details: "Esta es tu central de notificaciones. Aquí recibirás alertas importantes sobre tu inventario y rendimiento."
-        });
-
-        setBellNotifications(prev => [...prev, ...newNotifications]);
-
-      }, 5000); // 5 segundos después de iniciar sesión
-      return () => clearTimeout(timer); // Limpiar el temporizador si el componente se desmonta
+      }, 5000);
+      return () => clearTimeout(timer);
     }
   }, [user, products, hasWelcomed]);
 
