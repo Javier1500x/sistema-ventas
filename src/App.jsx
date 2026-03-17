@@ -56,11 +56,17 @@ import logoImage from '/Gemini_Generated_Image_tlsnlhtlsnlhtlsn.png?url'; // Imp
 // Hemos preparado el código para que funcione visualmente ahora mismo.
 
 // Determinar la URL del API
-// Si tenemos una variable de entorno, la usamos.
-// Si no, y estamos en producción web, usamos rutas relativas.
-// Si estamos en desarrollo local, usamos localhost:3001.
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? '' : 'http://localhost:3001');
+// 1. Variable de entorno explícita (VITE_API_URL)
+// 2. Si estamos en Capacitor (Android), usar la URL de producción obligatoriamente
+// 3. Si estamos en producción web (Render), usar rutas relativas ''
+// 4. Si estamos en local, usar localhost
+const isCapacitor = Boolean(window.Capacitor && window.Capacitor.isNative);
+const API_BASE_URL = import.meta.env.VITE_API_URL || 
+                     (isCapacitor ? 'https://sistema-ventas-tjby.onrender.com' : 
+                     (import.meta.env.MODE === 'production' ? '' : 'http://localhost:3001'));
+
 console.log('--- SISTEMA INICIALIZADO ---');
+console.log('Es Capacitor (Android):', isCapacitor);
 console.log('API_BASE_URL:', API_BASE_URL || '(relativa)');
 
 // Formato de moneda para Nicaragua
