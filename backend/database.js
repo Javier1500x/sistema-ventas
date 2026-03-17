@@ -199,12 +199,29 @@ const getAllProducts = async () => {
   return query('SELECT * FROM products', []);
 };
 
+const getNextManualCode = async () => {
+  try {
+    const rows = await query("SELECT manual_code FROM products WHERE manual_code GLOB '[0-9][0-9][0-9]' ORDER BY manual_code DESC LIMIT 1");
+    if (rows.length === 0) return "001";
+    const lastCode = parseInt(rows[0].manual_code, 10);
+    return String(lastCode + 1).padStart(3, '0');
+  } catch (error) {
+    console.error("Error generating manual code:", error);
+    return String(Math.floor(Math.random() * 900) + 100); // Fallback aleatorio si algo falla
+  }
+};
+
 const createProduct = async ({ name, price, stock, category, manual_code, image, supplier_id, classification }) => {
+  let finalCode = manual_code;
+  if (!finalCode || finalCode.trim() === "") {
+    finalCode = await getNextManualCode();
+  }
+  
   const result = await run(
     'INSERT INTO products (name, price, stock, category, manual_code, cost_price, image, supplier_id, classification) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)',
-    [name, price, stock, category, manual_code, image, supplier_id, classification || 'B']
+    [name, price, stock, category, finalCode, image, supplier_id, classification || 'B']
   );
-  return { id: Number(result.lastInsertRowid), name, price, stock, category, manual_code, image, supplier_id, classification };
+  return { id: Number(result.lastInsertRowid), name, price, stock, category, manual_code: finalCode, image, supplier_id, classification };
 };
 
 const updateProduct = async (id, { name, price, stock, category, manual_code, image, supplier_id, classification }) => {

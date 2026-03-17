@@ -189,6 +189,16 @@ app.get('/api/products', authenticateToken, async (req, res) => {
   }
 });
 
+app.get('/api/next-manual-code', authenticateToken, async (req, res) => {
+  try {
+    const nextCode = await getNextManualCode();
+    res.status(200).json({ nextCode });
+  } catch (error) {
+    console.error('Error al obtener siguiente código manual:', error);
+    res.status(500).json({ message: 'Error en el servidor al obtener código manual.' });
+  }
+});
+
 app.post('/api/products', authenticateToken, authorizeRole('admin'), async (req, res) => {
   try {
     const newProduct = await createProduct(req.body);

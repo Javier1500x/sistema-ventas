@@ -415,15 +415,6 @@ export default function App() {
     }
   }, [user, fetchProducts, fetchSales, fetchSuppliers, fetchSettings]);
 
-  // Persistent state for unique product codes
-  const [nextManualCodeId, setNextManualCodeId] = usePersistentState('nextManualCodeId', 1);
-
-  const generateUniqueManualCode = () => {
-    const code = String(nextManualCodeId).padStart(3, '0'); // e.g., "001", "002"
-    setNextManualCodeId(prev => prev + 1);
-    return code;
-  };
-
   // Estado para el modal de la factura
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [currentReceiptData, setCurrentReceiptData] = useState(null);
@@ -747,10 +738,7 @@ export default function App() {
           'Authorization': `Bearer ${user.token}`,
           'x-user-role': user.role
         },
-        body: JSON.stringify({
-          ...newProductData,
-          manual_code: newProductData.manual_code || generateUniqueManualCode()
-        }),
+        body: JSON.stringify(newProductData),
       });
       if (response.ok) {
         showNotification('Producto agregado correctamente', 'success');
@@ -788,41 +776,6 @@ export default function App() {
       showNotification('Error de conexión al actualizar producto.', 'error');
     }
   };
-
-  // --- useEffect para asignar códigos a productos existentes sin él ---
-  // Esta lógica ya no es estrictamente necesaria si todos los productos vienen del backend
-  // con manual_code, pero la mantendremos si hay productos iniciales o por compatibilidad.
-  useEffect(() => {
-    const hasAssignedManualCodes = localStorage.getItem('hasAssignedManualCodes_v1');
-    if (!hasAssignedManualCodes && products.length > 0) {
-      let updatedProducts = [...products];
-      let codeCounter = nextManualCodeId;
-      let needsUpdate = false;
-
-      updatedProducts = updatedProducts.map(p => {
-        if (!p.manual_code) {
-          needsUpdate = true;
-          const code = String(codeCounter).padStart(3, '0');
-          codeCounter++;
-          return { ...p, manual_code: code };
-        }
-        return p;
-      });
-
-      if (needsUpdate) {
-        // No actualizamos directamente el estado local, sino que llamamos a la API para cada producto modificado
-        // Esto sería ineficiente. Lo ideal es que el backend maneje la asignación inicial de códigos si no existen.
-        // Por ahora, para evitar complejidades, si el manual_code no viene del backend, se generará en el frontend
-        // para el formulario de agregar, pero el useEffect aquí no modificará directamente el estado.
-        // Si hay productos existentes sin código, se deberían editar manualmente o asignar desde el backend.
-        // Por lo tanto, este useEffect puede ser simplificado o eliminado si el backend gestiona los manual_code
-        setProducts(updatedProducts); // Mantengo el setProducts para que compile, pero la lógica de persistencia es diferente
-        setNextManualCodeId(codeCounter);
-        localStorage.setItem('hasAssignedManualCodes_v1', 'true');
-        showNotification('Códigos rápidos asignados a productos existentes.', 'info');
-      }
-    }
-  }, [products, nextManualCodeId, setProducts, setNextManualCodeId, showNotification]);
 
   const handleDeleteProduct = async (id) => {
     if (!window.confirm('¿Estás seguro de eliminar este producto? Esta acción no se puede deshacer.')) {
@@ -2354,6 +2307,21 @@ const InventoryView = ({
     handleCloseEditModal();
   };
 
+  const handleOpenAddModal = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/next-manual-code`, {
+        headers: { 'Authorization': `Bearer ${user.token}` }
+      });
+      if (response.ok) {
+        const { nextCode } = await response.json();
+        setNewProd({ ...newProd, manual_code: nextCode });
+      }
+    } catch (error) {
+      console.error("Error fetching next manual code:", error);
+    }
+    setIsModalOpen(true);
+  };
+
   const onSubmit = (e) => {
     e.preventDefault();
     handleAddProduct({
@@ -2393,7 +2361,7 @@ const InventoryView = ({
             <ArrowRightLeft size={18} /> Migrar
           </button>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleOpenAddModal}
             className="bg-violet-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-violet-700 transition-colors shadow-sm"
           >
             <Plus size={18} /> Nuevo Producto
