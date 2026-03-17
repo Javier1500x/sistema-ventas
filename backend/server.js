@@ -47,7 +47,7 @@ app.use(express.json());
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-role']
 }));
 
 console.log('--- INICIANDO SERVIDOR SISTEMA DE VENTAS V2.2 (DEBUG MODE) ---');
@@ -245,6 +245,9 @@ app.post('/api/record-sale', async (req, res) => {
     }
 
     const result = await insertSale({ productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount, date });
+
+    // Descontar stock real en la base de datos
+    await updateProductStock(productId, -quantity);
 
     // --- Notificación de Stock Bajo (CallMeBot WhatsApp + Reporte Completo) ---
     try {

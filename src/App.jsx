@@ -36,7 +36,8 @@ import {
   Eye,
   Download,
   Upload,
-  Image
+  Image,
+  ScanLine
 } from 'lucide-react';
 import {
   BarChart,
@@ -52,6 +53,7 @@ import {
   Cell
 } from 'recharts';
 import logoImage from '/Gemini_Generated_Image_tlsnlhtlsnlhtlsn.png?url'; // Import the logo image URL
+import BarcodeScanner from './components/BarcodeScanner.jsx';
 
 // --- MOCK DATA & UTILS ---
 // En un entorno real, esto se reemplaza por llamadas a la API (fetch/axios).
@@ -1808,13 +1810,14 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [selectedProductIndex, setSelectedProductIndex] = useState(-1); // Estado para el índice seleccionado en la búsqueda de productos
   const [selectedCartItemIndex, setSelectedCartItemIndex] = useState(-1); // Nuevo estado para el índice seleccionado en el carrito
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const searchInputRef = useRef(null); // Ref para el campo de búsqueda
 
   useEffect(() => {
-    if (searchInputRef.current) {
-      searchInputRef.current.focus(); // Enfocar el campo de búsqueda al montar el componente
+    if (searchInputRef.current && !isScannerOpen) {
+      searchInputRef.current.focus(); // Enfocar el campo de búsqueda al montar el componente (y al cerrar escaner)
     }
-  }, []);
+  }, [isScannerOpen]);
 
   const categories = ['Todos', ...new Set(products.map(p => p.category))];
 
@@ -1854,6 +1857,16 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
         showNotification('Producto no encontrado con ese código rápido.', 'error');
         setQuickCodeInput('');
       }
+    }
+  };
+
+  const handleScan = (decodedText) => {
+    setIsScannerOpen(false);
+    const exactMatch = products.find(p => p.manual_code === decodedText);
+    if (exactMatch) {
+      addToCart(exactMatch);
+    } else {
+      showNotification(`Producto no registrado: ${decodedText}`, 'error');
     }
   };
 
@@ -1959,33 +1972,41 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
         {/* Header del POS */}
         <div className="p-4 border-b border-slate-100 bg-white sticky top-0 z-10">
           <div className="flex flex-col md:flex-row gap-4 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Buscar producto (o escanear código)..."
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none transition-all"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    if (filteredProducts.length > 0) {
-                      addToCart(filteredProducts[0]);
-                      setSearchTerm('');
-                    } else if (filteredProducts.length === 0 && searchTerm) {
-                      // Intento de búsqueda directa por código exacto si no filtra nada visualmente pero es un escaneo rápido
-                      const exactMatch = products.find(p => p.manual_code === searchTerm);
-                      if (exactMatch) {
-                        addToCart(exactMatch);
+            <div className="relative flex-1 flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Buscar producto..."
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none transition-all"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      if (filteredProducts.length > 0) {
+                        addToCart(filteredProducts[0]);
                         setSearchTerm('');
-                      } else {
-                        showNotification('Producto no encontrado', 'error');
+                      } else if (filteredProducts.length === 0 && searchTerm) {
+                        const exactMatch = products.find(p => p.manual_code === searchTerm);
+                        if (exactMatch) {
+                          addToCart(exactMatch);
+                          setSearchTerm('');
+                        } else {
+                          showNotification('Producto no encontrado', 'error');
+                        }
                       }
                     }
-                  }
-                }}
-              />
+                  }}
+                />
+              </div>
+              <button 
+                onClick={() => setIsScannerOpen(true)}
+                className="px-4 py-3 bg-violet-100 text-violet-600 rounded-xl hover:bg-violet-200 transition-colors flex items-center justify-center shadow-sm"
+                title="Escanear Código de Barras"
+              >
+                <ScanLine size={24} />
+              </button>
             </div>
             <select
               className="px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:ring-2 focus:ring-violet-500 outline-none cursor-pointer"
@@ -2139,6 +2160,13 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
           <span className="font-bold">{cart.length}</span>
         </button>
       )}
+
+      {isScannerOpen && (
+        <BarcodeScanner 
+          onScan={handleScan}
+          onClose={() => setIsScannerOpen(false)}
+        />
+      )}
     </div>
   );
 };
@@ -2272,6 +2300,17 @@ const InventoryView = ({
   const [newProd, setNewProd] = useState({ name: '', price: '', stock: '', category: 'General', classification: 'B', manual_code: '', image: null, supplier_id: '' });
   const [searchTerm, setSearchTerm] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannerTarget, setScannerTarget] = useState(''); // 'add' or 'edit'
+
+  const handleScan = (decodedText) => {
+    setIsScannerOpen(false);
+    if (scannerTarget === 'add') {
+      setNewProd({ ...newProd, manual_code: decodedText });
+    } else if (scannerTarget === 'edit') {
+      setEditingProduct({ ...editingProduct, manual_code: decodedText });
+    }
+  };
 
   const handleFile = async (file, isEdit = false) => {
     if (!file || !file.type.startsWith('image/')) return;
@@ -2465,12 +2504,21 @@ const InventoryView = ({
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700">Código Rápido (Opcional)</label>
-                <input
-                  type="text"
-                  className="w-full border rounded-lg px-3 py-2 mt-1 font-mono"
-                  value={newProd.manual_code}
-                  onChange={e => setNewProd({ ...newProd, manual_code: e.target.value })}
-                />
+                <div className="flex gap-2 mt-1">
+                  <input
+                    type="text"
+                    className="flex-1 border rounded-lg px-3 py-2 font-mono"
+                    value={newProd.manual_code}
+                    onChange={e => setNewProd({ ...newProd, manual_code: e.target.value })}
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => { setScannerTarget('add'); setIsScannerOpen(true); }}
+                    className="px-3 py-2 bg-violet-100 text-violet-600 rounded-lg hover:bg-violet-200 transition-colors"
+                  >
+                    <ScanLine size={20} />
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -2567,12 +2615,21 @@ const InventoryView = ({
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700">Código Rápido</label>
-                <input
-                  type="text"
-                  className="w-full border rounded-lg px-3 py-2 mt-1 font-mono"
-                  value={editingProduct.manual_code || ''}
-                  onChange={e => setEditingProduct({ ...editingProduct, manual_code: e.target.value })}
-                />
+                <div className="flex gap-2 mt-1">
+                  <input
+                    type="text"
+                    className="flex-1 border rounded-lg px-3 py-2 font-mono"
+                    value={editingProduct.manual_code || ''}
+                    onChange={e => setEditingProduct({ ...editingProduct, manual_code: e.target.value })}
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => { setScannerTarget('edit'); setIsScannerOpen(true); }}
+                    className="px-3 py-2 bg-violet-100 text-violet-600 rounded-lg hover:bg-violet-200 transition-colors"
+                  >
+                    <ScanLine size={20} />
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -2655,6 +2712,13 @@ const InventoryView = ({
             </form>
           </div>
         </div>
+      )}
+
+      {isScannerOpen && (
+        <BarcodeScanner 
+          onScan={handleScan}
+          onClose={() => setIsScannerOpen(false)}
+        />
       )}
     </div>
   );
