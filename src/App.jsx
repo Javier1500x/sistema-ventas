@@ -930,13 +930,19 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-violet-50 text-slate-900 transition-colors duration-300">
-      <div className="flex bg-violet-600 shadow-sm border-b border-violet-700 h-16 sticky top-0 z-30 px-4 md:px-8 items-center justify-between">
+      <div className="flex bg-violet-600 shadow-sm border-b border-violet-700 h-16 sticky top-0 z-40 px-4 md:px-8 items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl overflow-hidden shadow-lg shadow-violet-500/30">
+          <button 
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="p-2 -ml-2 text-white hover:bg-violet-500 rounded-lg lg:hidden transition-colors"
+          >
+            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+          <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl overflow-hidden shadow-lg shadow-violet-500/30">
             <img src={logoImage} alt="Logo" className="w-full h-full object-cover" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white">
+            <h1 className="text-lg md:text-xl font-bold text-white whitespace-nowrap">
               Sistema Ventas
             </h1>
           </div>
@@ -960,30 +966,45 @@ export default function App() {
         </div>
       </div>
 
-      <div className="flex h-[calc(100vh-64px)]">
+      <div className="flex h-[calc(100vh-64px)] relative">
+        {/* Backdrop for mobile */}
+        {isMobileMenuOpen && (
+          <div 
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-30 lg:hidden"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+        )}
+
         {/* Sidebar */}
-        <div className="w-20 lg:w-64 bg-violet-700 border-r border-violet-800 flex-shrink-0 flex flex-col justify-between py-6">
+        <div className={`
+          fixed lg:static inset-y-0 left-0 z-40
+          w-64 lg:w-64 bg-violet-700 border-r border-violet-800 
+          flex-shrink-0 flex flex-col justify-between py-6
+          transition-transform duration-300 ease-in-out
+          ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+          ${!isMobileMenuOpen && 'lg:w-20'}
+        `}>
           <nav className="space-y-1 px-2">
             {(user.role === 'admin' || user.role === 'inventory_manager') && (
-              <SidebarItem icon={<LayoutDashboard size={22} />} label="Panel Control" active={view === 'dashboard'} onClick={() => setView('dashboard')} collapsed={false} />
+              <SidebarItem icon={<LayoutDashboard size={22} />} label="Panel Control" active={view === 'dashboard'} onClick={() => { setView('dashboard'); setIsMobileMenuOpen(false); }} />
             )}
             {(user.role === 'admin' || user.role === 'seller') && (
-              <SidebarItem icon={<DollarSign size={22} />} label="Punto de Venta" active={view === 'pos'} onClick={() => setView('pos')} collapsed={false} />
+              <SidebarItem icon={<DollarSign size={22} />} label="Punto de Venta" active={view === 'pos'} onClick={() => { setView('pos'); setIsMobileMenuOpen(false); }} />
             )}
             {(user.role === 'admin' || user.role === 'inventory_manager') && (
               <>
-                <SidebarItem icon={<Package size={20} />} label="Inventario" active={view === 'inventory'} onClick={() => setView('inventory')} collapsed={false} />
-                <SidebarItem icon={<Users size={20} />} label="Proveedores" active={view === 'suppliers'} onClick={() => setView('suppliers')} collapsed={false} />
+                <SidebarItem icon={<Package size={20} />} label="Inventario" active={view === 'inventory'} onClick={() => { setView('inventory'); setIsMobileMenuOpen(false); }} />
+                <SidebarItem icon={<Users size={20} />} label="Proveedores" active={view === 'suppliers'} onClick={() => { setView('suppliers'); setIsMobileMenuOpen(false); }} />
               </>
             )}
-            {(user.role === 'admin' || user.role === 'seller') && <SidebarItem icon={<History size={20} />} label="Historial" active={view === 'history'} onClick={() => setView('history')} collapsed={false} />}
-            {(user.role === 'admin' || user.role === 'seller') && <SidebarItem icon={<ShieldCheck size={20} />} label="Cierre de Caja" active={view === 'cash-closing'} onClick={() => setView('cash-closing')} collapsed={false} />}
+            {(user.role === 'admin' || user.role === 'seller') && <SidebarItem icon={<History size={20} />} label="Historial" active={view === 'history'} onClick={() => { setView('history'); setIsMobileMenuOpen(false); }} />}
+            {(user.role === 'admin' || user.role === 'seller') && <SidebarItem icon={<ShieldCheck size={20} />} label="Cierre de Caja" active={view === 'cash-closing'} onClick={() => { setView('cash-closing'); setIsMobileMenuOpen(false); }} />}
             {(user.role === 'admin' || user.role === 'inventory_manager') && (
-              <SidebarItem icon={<Banknote size={22} />} label="Flujo de Caja" active={view === 'cash_flow'} onClick={() => setView('cash_flow')} collapsed={false} />
+              <SidebarItem icon={<Banknote size={22} />} label="Flujo de Caja" active={view === 'cash_flow'} onClick={() => { setView('cash_flow'); setIsMobileMenuOpen(false); }} />
             )}
-            {user.role === 'admin' && <SidebarItem icon={<Settings size={20} />} label="Configuración" active={view === 'settings'} onClick={() => setView('settings')} collapsed={false} />}
+            {user.role === 'admin' && <SidebarItem icon={<Settings size={20} />} label="Configuración" active={view === 'settings'} onClick={() => { setView('settings'); setIsMobileMenuOpen(false); }} />}
             {user.role === 'admin' && (
-              <SidebarItem icon={<Users size={22} />} label="Usuarios" active={view === 'users'} onClick={() => setView('users')} collapsed={false} />
+              <SidebarItem icon={<Users size={22} />} label="Usuarios" active={view === 'users'} onClick={() => { setView('users'); setIsMobileMenuOpen(false); }} />
             )}
           </nav>
 
@@ -1559,15 +1580,18 @@ const DailySummary = ({ refreshKey, user }) => {
   if (isLoading) return <div className="p-4 rounded-xl bg-slate-100 animate-pulse" style={{ height: '96px' }} />;
 
   return (
-    <div className="p-4 rounded-xl bg-gradient-to-br from-violet-600 to-purple-700 text-white shadow-lg">
-      <div className="flex justify-between items-center">
+    <div className="p-6 rounded-2xl bg-gradient-to-br from-violet-600 to-purple-700 text-white shadow-lg overflow-hidden relative">
+      <div className="absolute top-0 right-0 p-8 opacity-10">
+        <DollarSign size={80} />
+      </div>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-10">
         <div>
-          <p className="text-violet-200 text-sm">Ventas Totales de Hoy</p>
-          <p className="text-3xl font-bold">{formatCurrency(summary.totalSales)}</p>
+          <p className="text-violet-200 text-sm font-medium">Ventas Totales de Hoy</p>
+          <p className="text-3xl sm:text-4xl font-black text-white">{formatCurrency(summary.totalSales)}</p>
         </div>
-        <div className="text-right">
-          <p className="text-violet-200 text-sm">Transacciones</p>
-          <p className="text-3xl font-bold">{summary.salesCount}</p>
+        <div className="sm:text-right">
+          <p className="text-violet-200 text-sm font-medium">Transacciones</p>
+          <p className="text-3xl sm:text-4xl font-black text-white">{summary.salesCount}</p>
         </div>
       </div>
     </div>
@@ -1652,30 +1676,30 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-800">Panel de Control</h2>
-        <div className="flex gap-3 items-center">
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-slate-800">Panel de Control</h2>
+          <p className="text-slate-500 text-sm">Resumen de actividad en tiempo real</p>
+        </div>
+        <div className="flex flex-wrap gap-2 w-full xl:w-auto">
           <button
             onClick={onPreviewPDF}
-            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-200"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
           >
-            <Eye size={16} /> Vista Previa
+            <Eye size={16} /> <span className="hidden sm:inline">Vista Previa</span><span className="sm:hidden">PDF</span>
           </button>
           <button
             onClick={onDownloadPDF}
-            className="flex items-center gap-2 bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-slate-700 transition-all shadow-md shadow-slate-200"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold hover:bg-slate-700 transition-all shadow-md shadow-slate-200"
           >
-            <FileText size={16} /> Descargar PDF
+            <FileText size={16} /> <span className="hidden sm:inline">Descargar PDF</span><span className="sm:hidden">Bajar</span>
           </button>
           <button
             onClick={onSendReport}
-            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-emerald-700 transition-all shadow-md shadow-emerald-200"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-emerald-600 text-white px-3 py-2 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all shadow-md shadow-emerald-100"
           >
-            <Send size={16} /> Enviar Reporte Ahora
+            <Send size={16} /> <span className="hidden sm:inline">Enviar Reporte</span><span className="sm:hidden">Enviar</span>
           </button>
-          <div className="text-sm text-slate-500">
-            Resumen en tiempo real
-          </div>
         </div>
       </div>
 

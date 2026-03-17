@@ -121,6 +121,18 @@ const initDb = async () => {
   });
 
   await seedInitialUsers();
+
+  // Migración: Asegurar que existe la columna 'classification' en 'products'
+  try {
+    await db.execute("ALTER TABLE products ADD COLUMN classification TEXT DEFAULT 'B'");
+    console.log("Migración exitosa: Columna 'classification' añadida.");
+  } catch (e) {
+    // Si ya existe, ignoramos el error
+    if (!e.message.includes('duplicate column name') && !e.message.includes('already exists')) {
+      console.log("Aviso de migración:", e.message);
+    }
+  }
+
   console.log('Base de datos inicializada correctamente.');
 };
 
