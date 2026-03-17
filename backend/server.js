@@ -504,24 +504,13 @@ cron.schedule('0 12 * * *', async () => {
   // Servir archivos estáticos del frontend (para Render)
   // Intentamos buscar la carpeta dist en varios lugares posibles
   const possiblePaths = [
-    path.join(__dirname, '..', 'dist'),
-    path.join(process.cwd(), '..', 'dist'),
+    path.join(__dirname, 'dist'),        // /backend/dist (donde lo movemos en Render)
+    path.join(__dirname, '..', 'dist'),  // /dist (Local)
     path.join(process.cwd(), 'dist'),
-    path.join(__dirname, 'dist')
   ];
-
-  console.log('--- DIAGNÓSTICO DE CARPETAS ---');
-  try {
-    const parentDir = path.join(process.cwd(), '..');
-    console.log(`Contenido de ${parentDir}:`, fs.readdirSync(parentDir));
-    console.log(`Contenido de ${process.cwd()}:`, fs.readdirSync(process.cwd()));
-  } catch (e) {
-    console.log('No se pudo listar las carpetas:', e.message);
-  }
 
   let frontendPath = null;
   for (const p of possiblePaths) {
-    console.log(`Buscando frontend en: ${p}`);
     if (fs.existsSync(p) && fs.existsSync(path.join(p, 'index.html'))) {
       frontendPath = p;
       break;
@@ -538,12 +527,11 @@ cron.schedule('0 12 * * *', async () => {
         next();
       }
     });
-    console.log('✅ Frontend estático detectado y servido desde:', frontendPath);
+    console.log('✅ UI detectada en:', frontendPath);
   } else {
-    console.error('❌ ERROR: No se encontró la carpeta "dist" con index.html en ninguna de las rutas probadas.');
-    // Ruta mínima para que al menos no diga "Cannot GET /" si falla la detección
+    console.error('❌ ERROR: No se encontró "dist/index.html".');
     app.get('/', (req, res) => {
-      res.send('Servidor activo, pero no se encontró la interfaz (carpeta dist). Revisa los logs de Render.');
+      res.send('Servidor activo. Error: No se encontró la carpeta "dist". Revisa el Build de Render.');
     });
   }
 
