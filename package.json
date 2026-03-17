@@ -58,7 +58,7 @@
     "productName": "Sistema de Ventas",
     "files": [
       "dist/**/*",
-      "build_output/**/*",
+      "backend/www/**/*",
       "backend/**/*",
       "public/electron.cjs",
       "backend/.env"

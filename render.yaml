@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: free
     rootDir: .
-    buildCommand: npm install && npm run build && mv build_output backend/dist && echo "MOVIDO BUILD_OUTPUT A BACKEND/DIST" && cd backend && npm install
+    buildCommand: npm install && npm run build && echo "BUILD COMPLETADO" && ls -la backend/www && test -f backend/www/index.html && cd backend && npm install
     startCommand: cd backend && npm start
     envVars:
       - key: TURSO_DATABASE_URL

@@ -6,7 +6,8 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   build: {
-    outDir: 'build_output'
+    outDir: 'backend/www',
+    emptyOutDir: true
   },
   css: {
     // Explicitly point to the PostCSS config file, which is now
