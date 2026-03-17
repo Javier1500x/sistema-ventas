@@ -27,9 +27,14 @@ const BarcodeScanner = ({ onScan, onClose }) => {
           startPromise = html5QrCode.start(
             { facingMode: "environment" },
             {
-              fps: 10,
-              qrbox: { width: 250, height: 150 },
-              aspectRatio: 1.0
+              fps: 20, // Aumentado para mejor fluidez
+              qrbox: (viewfinderWidth, viewfinderHeight) => {
+                // Caja dinámica optimizada para códigos de barras horizontales
+                const width = Math.min(viewfinderWidth * 0.8, 300);
+                const height = Math.min(viewfinderHeight * 0.4, 150);
+                return { width, height };
+              },
+              aspectRatio: 1.777778 // 16:9 es mejor para detectar códigos largos
             },
             (decodedText, decodedResult) => {
               // Successfully decoded
@@ -111,9 +116,12 @@ const BarcodeScanner = ({ onScan, onClose }) => {
                   <div className="w-8 h-8 border-4 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
                 </div>
               )}
-              <div id="reader" className="w-full bg-black rounded-lg overflow-hidden border-2 border-slate-200"></div>
+              <div id="reader" className="w-full bg-black rounded-lg overflow-hidden border-2 border-slate-200 relative">
+                {/* Línea de escaneo láser (Visual) */}
+                <div className="absolute top-1/2 left-[10%] right-[10%] h-[2px] bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-10 animate-pulse pointer-events-none"></div>
+              </div>
               <p className="text-center text-xs text-slate-500 mt-4">
-                Apunta la cámara al código de barras del producto. Se agregará automáticamente.
+                Alinea el código de barras con la línea roja. Se agregará automáticamente.
               </p>
             </>
           )}
