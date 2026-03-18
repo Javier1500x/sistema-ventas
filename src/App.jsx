@@ -2948,9 +2948,12 @@ const SuppliersView = ({ suppliers, onAdd, onEdit, onDelete, onPurchase }) => {
 const CashClosingView = ({ timeOffset, user }) => {
   const [data, setData] = useState({
     date: getNicaraguaDateString(timeOffset),
+    starting_cash: 0,
     expected_cash: 0,
     actual_cash: 0,
     difference: 0,
+    total_entries: 0,
+    total_exits: 0,
     notes: '',
     status: 'open',
     total_sales: 0
@@ -3003,7 +3006,25 @@ const CashClosingView = ({ timeOffset, user }) => {
 
   const handleSave = async (isClosing = false) => {
     try {
-      const payload = { ...data, status: isClosing ? 'closed' : 'open' };
+      // Validar que el monto contado sea válido si se va a cerrar
+      if (isClosing && (data.actual_cash === undefined || data.actual_cash === null)) {
+        alert("Por favor ingrese el monto contado antes de cerrar.");
+        return;
+      }
+
+      const payload = { 
+        ...data, 
+        status: isClosing ? 'closed' : 'open',
+        // Asegurar que los campos numéricos sean números y no undefined
+        starting_cash: Number(data.starting_cash || 0),
+        total_entries: Number(data.total_entries || 0),
+        total_exits: Number(data.total_exits || 0),
+        actual_cash: Number(data.actual_cash || 0),
+        expected_cash: Number(data.expected_cash || 0),
+        difference: Number(data.difference || 0),
+        total_sales: Number(data.total_sales || 0)
+      };
+
       const response = await fetch(`${API_BASE_URL}/api/cash-closings`, {
         method: 'POST',
         headers: {
@@ -3013,12 +3034,17 @@ const CashClosingView = ({ timeOffset, user }) => {
         },
         body: JSON.stringify(payload)
       });
+
       if (response.ok) {
         alert(isClosing ? "Caja cerrada con éxito" : "Borrador guardado");
         fetchData();
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        alert("Error del servidor: " + (errData.message || "No se pudo guardar el cierre"));
       }
     } catch (error) {
-      alert("Error al guardar el cierre");
+      console.error("Error al guardar cierre de caja:", error);
+      alert("Error de conexión: No se pudo contactar al servidor.");
     }
   };
 

@@ -390,9 +390,13 @@ app.get('/api/cash-closings/date/:date', async (req, res) => {
 
 app.post('/api/cash-closings', async (req, res) => {
   try {
+    console.log('--- REQUERIMIENTO DE CIERRE DE CAJA ---');
+    console.log('Fecha:', req.body.date);
+    console.log('Status:', req.body.status);
     await upsertCashClosing(req.body);
     res.json({ message: 'Cierre de caja guardado con éxito.' });
   } catch (error) {
+    console.error('ERROR EN CIERRE DE CAJA:', error);
     res.status(500).json({ message: 'Error al guardar cierre de caja.' });
   }
 });
