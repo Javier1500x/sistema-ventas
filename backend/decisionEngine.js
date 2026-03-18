@@ -29,9 +29,9 @@ const getDailySummary = async () => {
     const offsetStr = await getSetting('time_offset');
     const offset = offsetStr !== null ? parseFloat(offsetStr) : -6;
 
-    // Filtrar ventas del día local
+    // Filtrar ventas del día local que NO estén cerradas
     const dailySales = sales.filter(sale => {
-      if (!sale.date) return false;
+      if (!sale.date || sale.is_closed === 1) return false;
       const isExplicitUTC = sale.date.includes('Z') || sale.date.includes('T');
       if (isExplicitUTC) {
         const d = new Date(sale.date);
@@ -78,21 +78,18 @@ const getSalesChartData = async () => {
     const offsetStr = await getSetting('time_offset');
     const offset = offsetStr !== null ? parseFloat(offsetStr) : -6;
 
-    sales.forEach(sale => {
+    sales.filter(s => s.is_closed === 0).forEach(sale => {
       const isExplicitUTC = sale.date.includes('Z') || sale.date.includes('T');
       let saleDateStr;
 
       if (isExplicitUTC) {
-        // Shifter la fecha de la venta por el offset antes de extraer el string YYYY-MM-DD
         const d = new Date(sale.date);
         const adjusted = new Date(d.getTime() + (offset * 3600000));
         saleDateStr = adjusted.toISOString().split('T')[0];
       } else {
-        // Es una fecha local vieja, extraer directamente el prefijo
         saleDateStr = sale.date.split(' ')[0];
       }
 
-      // We check if the sale date is within our map
       if (salesTrendMap.has(saleDateStr)) {
         salesTrendMap.set(saleDateStr, salesTrendMap.get(saleDateStr) + (sale.price * sale.quantity));
       }
@@ -105,7 +102,7 @@ const getSalesChartData = async () => {
     const productCategoryMap = new Map();
     products.forEach(p => productCategoryMap.set(String(p.id), p.category));
 
-    sales.forEach(sale => {
+    sales.filter(s => s.is_closed === 0).forEach(sale => {
       const cat = productCategoryMap.get(String(sale.productId)) || 'Otros';
       categoryMap.set(cat, (categoryMap.get(cat) || 0) + (sale.price * sale.quantity));
     });

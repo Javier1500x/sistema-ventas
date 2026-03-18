@@ -32,6 +32,7 @@ const {
   recordPurchase,
   getCashClosingByDate,
   upsertCashClosing,
+  markSalesAsClosed,
   getSetting,
   updateSetting
 } = require('./database');
@@ -393,7 +394,15 @@ app.post('/api/cash-closings', async (req, res) => {
     console.log('--- REQUERIMIENTO DE CIERRE DE CAJA ---');
     console.log('Fecha:', req.body.date);
     console.log('Status:', req.body.status);
+    
     await upsertCashClosing(req.body);
+
+    // Si el cierre es definitivo (closed), marcar las ventas de hoy como cerradas
+    if (req.body.status === 'closed') {
+      console.log('Cerrando ventas activas para la fecha:', req.body.date);
+      await markSalesAsClosed(req.body.date);
+    }
+
     res.json({ message: 'Cierre de caja guardado con éxito.' });
   } catch (error) {
     console.error('ERROR EN CIERRE DE CAJA:', error);

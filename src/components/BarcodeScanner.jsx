@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
-import { X, Camera, AlertCircle } from 'lucide-react';
+import { X, Camera, AlertCircle, Zap, ZapOff } from 'lucide-react';
 import { playBeep } from '../utils/audio';
 
 const BarcodeScanner = ({ onScan, onClose }) => {
   const [error, setError] = useState('');
   const [isCamsLoaded, setIsCamsLoaded] = useState(false);
+  const [isTorchOn, setIsTorchOn] = useState(false);
+  const [hasTorch, setHasTorch] = useState(false);
   const scannerRef = useRef(null);
 
   useEffect(() => {
@@ -17,69 +19,84 @@ const BarcodeScanner = ({ onScan, onClose }) => {
       try {
         const devices = await Html5Qrcode.getCameras();
         if (devices && devices.length) {
-          if (!isMounted) return; // componente desmontado antes de recibir cámaras
+          if (!isMounted) return;
           setIsCamsLoaded(true);
           
-          // Asegurar que no hay otra instancia anclada
           html5QrCode = new Html5Qrcode("reader");
           scannerRef.current = html5QrCode;
           
           startPromise = html5QrCode.start(
             { facingMode: "environment" },
             {
-              fps: 20, // Aumentado para mejor fluidez
+              fps: 20,
               qrbox: (viewfinderWidth, viewfinderHeight) => {
-                // Caja dinámica optimizada para códigos de barras horizontales
                 const width = Math.min(viewfinderWidth * 0.8, 300);
                 const height = Math.min(viewfinderHeight * 0.4, 150);
                 return { width, height };
               },
-              aspectRatio: 1.777778 // 16:9 es mejor para detectar códigos largos
+              aspectRatio: 1.777778
             },
-            (decodedText, decodedResult) => {
-              // Successfully decoded
+            (decodedText) => {
               playBeep();
               onScan(decodedText);
             },
-            (errorMessage) => {
-              // Ignore standard parse errors
-            }
+            () => {}
           );
           
           await startPromise;
+
+          // Verificar si la cámara soporta linterna (torch)
+          try {
+            const track = html5QrCode.getRunningTrack();
+            if (track) {
+              const capabilities = track.getCapabilities();
+              if (capabilities.torch) {
+                setHasTorch(true);
+              }
+            }
+          } catch (e) {
+            console.log("Torch not supported on this device/browser");
+          }
         } else {
           if (isMounted) setError('No se encontraron cámaras disponibles.');
         }
       } catch (err) {
         console.error("Error starting scanner:", err);
-        if (isMounted) setError('Error al acceder a la cámara. Asegúrate de dar los permisos.');
+        if (isMounted) setError('Error al acceder a la cámara.');
       }
     };
 
-    // Agregar un pequeño retraso para permitir que el DOM renderice el div #reader perfectamente
     const timeoutId = setTimeout(() => {
         startScanner();
     }, 100);
 
-    // Cleanup function
     return () => {
       isMounted = false;
       clearTimeout(timeoutId);
-      
       if (scannerRef.current) {
         if (startPromise) {
-          // Esperar a que inicie para poder detenerlo sin romper la librería
           startPromise.then(() => {
             scannerRef.current.stop()
-              .then(() => {
-                scannerRef.current.clear();
-              })
+              .then(() => scannerRef.current.clear())
               .catch(err => console.error("Error stopping scanner", err));
-          }).catch(err => console.error("Start promise failed so no need to stop", err));
+          }).catch(() => {});
         }
       }
     };
   }, [onScan]);
+
+  const toggleTorch = async () => {
+    if (!scannerRef.current || !hasTorch) return;
+    try {
+      const newState = !isTorchOn;
+      await scannerRef.current.applyVideoConstraints({
+        advanced: [{ torch: newState }]
+      });
+      setIsTorchOn(newState);
+    } catch (err) {
+      console.error("Error toggling torch:", err);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center p-4">
@@ -89,12 +106,23 @@ const BarcodeScanner = ({ onScan, onClose }) => {
             <Camera size={20} />
             Escanear Código
           </div>
-          <button 
-            onClick={onClose} 
-            className="p-1 hover:bg-violet-500 rounded-full transition-colors"
-          >
-            <X size={24} />
-          </button>
+          <div className="flex items-center gap-2">
+            {hasTorch && (
+              <button 
+                onClick={toggleTorch}
+                className={`p-2 rounded-full transition-colors ${isTorchOn ? 'bg-yellow-400 text-black' : 'hover:bg-violet-500'}`}
+                title="Alternar Linterna"
+              >
+                {isTorchOn ? <Zap size={20} /> : <ZapOff size={20} />}
+              </button>
+            )}
+            <button 
+              onClick={onClose} 
+              className="p-1 hover:bg-violet-500 rounded-full transition-colors"
+            >
+              <X size={24} />
+            </button>
+          </div>
         </div>
         
         <div className="p-4 min-h-[300px] flex flex-col justify-center bg-slate-50 relative">
@@ -117,7 +145,6 @@ const BarcodeScanner = ({ onScan, onClose }) => {
                 </div>
               )}
               <div id="reader" className="w-full bg-black rounded-lg overflow-hidden border-2 border-slate-200 relative">
-                {/* Línea de escaneo láser (Visual) */}
                 <div className="absolute top-1/2 left-[10%] right-[10%] h-[2px] bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-10 animate-pulse pointer-events-none"></div>
               </div>
               <p className="text-center text-xs text-slate-500 mt-4">

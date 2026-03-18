@@ -33,7 +33,8 @@ const initDb = async () => {
       transactionId INTEGER,
       paymentMethod TEXT,
       receivedAmount REAL,
-      changeAmount REAL
+      changeAmount REAL,
+      is_closed INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS cash_transactions (
@@ -126,12 +127,13 @@ const initDb = async () => {
   try {
     await db.execute("ALTER TABLE products ADD COLUMN classification TEXT DEFAULT 'B'");
     console.log("Migración exitosa: Columna 'classification' añadida.");
-  } catch (e) {
-    // Si ya existe, ignoramos el error
-    if (!e.message.includes('duplicate column name') && !e.message.includes('already exists')) {
-      console.log("Aviso de migración:", e.message);
-    }
-  }
+  } catch (e) {}
+
+  // Migración: Asegurar que existe la columna 'is_closed' en 'sales_history'
+  try {
+    await db.execute("ALTER TABLE sales_history ADD COLUMN is_closed INTEGER DEFAULT 0");
+    console.log("Migración exitosa: Columna 'is_closed' añadida.");
+  } catch (e) {}
 
   console.log('Base de datos inicializada correctamente.');
 };
@@ -245,10 +247,15 @@ const updateProductStock = async (productId, stockChange) => {
 // --- Ventas ---
 const insertSale = async ({ productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount, date }) => {
   const result = await run(
-    'INSERT INTO sales_history (productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO sales_history (productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount, date, is_closed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)',
     [productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount, date]
   );
   return { id: Number(result.lastInsertRowid) };
+};
+
+const markSalesAsClosed = async (datePrefix) => {
+  const result = await run('UPDATE sales_history SET is_closed = 1 WHERE date LIKE ? AND is_closed = 0', [`${datePrefix}%`]);
+  return { changes: result.rowsAffected };
 };
 
 const getAllSales = async () => {
@@ -433,6 +440,7 @@ module.exports = {
   recordPurchase,
   getCashClosingByDate,
   upsertCashClosing,
+  markSalesAsClosed,
   getSetting,
   updateSetting
 };
