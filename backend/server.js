@@ -469,6 +469,25 @@ app.get('/api/dashboard-charts', async (req, res) => {
 });
 
 // --- Endpoints para Auto-Órdenes (Mostrador Digital) ---
+app.get('/api/public/products', async (req, res) => {
+  try {
+    const products = await getProducts();
+    // Solo enviamos datos necesarios para el catálogo público y que tengan stock
+    const publicProducts = products
+      .filter(p => p.stock > 0)
+      .map(p => ({
+        id: p.id,
+        name: p.name,
+        price: p.price,
+        image: p.image,
+        category: p.category
+      }));
+    res.json(publicProducts);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener catálogo público' });
+  }
+});
+
 app.post('/api/auto-orders', async (req, res) => {
   try {
     const { items, total, customerName } = req.body;

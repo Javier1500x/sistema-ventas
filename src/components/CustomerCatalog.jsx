@@ -9,10 +9,20 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   const [view, setView] = useState('catalog'); // 'catalog', 'order-status'
 
   useEffect(() => {
-    fetch(`${apiBaseUrl}/api/products`)
+    fetch(`${apiBaseUrl}/api/public/products`)
       .then(res => res.json())
-      .then(data => setProducts(data.filter(p => p.stock > 0)))
-      .catch(err => console.error('Error fetching products:', err));
+      .then(data => {
+        if (Array.isArray(data)) {
+          setProducts(data);
+        } else {
+          console.error('Invalid products data:', data);
+          setProducts([]);
+        }
+      })
+      .catch(err => {
+        console.error('Error fetching products:', err);
+        setProducts([]);
+      });
 
     // Revisar si venimos de un QR de estado
     const hash = window.location.hash;
