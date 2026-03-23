@@ -218,6 +218,7 @@ export default function App() {
   // --- ESTADO GLOBAL ---
   const [user, setUser] = useState(null); // { name, role, token }
   const [view, setView] = useState('login'); // login, dashboard, pos, inventory, history
+  const [currentAutoOrderId, setCurrentAutoOrderId] = useState(null);
   const [products, setProducts] = usePersistentState('products', INITIAL_PRODUCTS);
   const [sales, setSales] = usePersistentState('sales', []);
   const [cart, setCart] = useState([]);
@@ -653,6 +654,7 @@ export default function App() {
     });
 
     updateAutoOrderStatus(order.id, 'preparing');
+    setCurrentAutoOrderId(order.id);
     showNotification(`Pedido de ${order.customerName || 'Cliente'} cargado`, 'success');
     // Remover de la lista local de pendientes para evitar duplicados visuales antes del próximo polling
     setPendingAutoOrders(prev => prev.filter(o => o.id !== order.id));
@@ -829,8 +831,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(saleData),
       });
-    })).then(() => {
+    })).then(async () => {
       fetchSales(); // Recargar historial después de sincronizar con el backend
+      if (currentAutoOrderId) {
+        await updateAutoOrderStatus(currentAutoOrderId, 'ready');
+        setCurrentAutoOrderId(null);
+      }
     }).catch(error => console.error('Error al registrar venta en backend:', error));
 
     setCart([]);
