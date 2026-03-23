@@ -33,6 +33,7 @@ const {
   getCashClosingByDate,
   upsertCashClosing,
   markSalesAsClosed,
+  getSetting,
   updateSetting,
   createAutoOrder,
   getAutoOrderById,
@@ -494,12 +495,28 @@ app.get('/api/public/products', async (req, res) => {
 app.post('/api/auto-orders', async (req, res) => {
   try {
     const { items, total, customerName, note, payWith } = req.body;
+    console.log('API POST /api/auto-orders received:', { customerName, itemsCount: items?.length });
+    
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: 'El carrito está vacío o es inválido' });
+    }
+
     const date = getUTCDateISO();
-    const result = await createAutoOrder({ items, total, customerName, note, payWith, date });
+    // Asegurar valores por defecto para evitar problemas con la DB
+    const orderData = {
+      items,
+      total: parseFloat(total) || 0,
+      customerName: customerName || 'Cliente',
+      note: note || '',
+      payWith: payWith ? parseFloat(payWith) : null,
+      date
+    };
+
+    const result = await createAutoOrder(orderData);
     res.status(201).json({ id: result.id, message: 'Pedido enviado con éxito' });
   } catch (error) {
-    console.error('ERROR AL ENVIAR PEDIDO:', error);
-    res.status(500).json({ message: 'Error al enviar pedido' });
+    console.error('ERROR CRÍTICO AL ENVIAR PEDIDO:', error);
+    res.status(500).json({ message: 'Error interno al enviar pedido', detail: error.message });
   }
 });
 
