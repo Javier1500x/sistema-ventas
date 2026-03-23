@@ -148,10 +148,16 @@ const initDb = async () => {
 
   // Migración: Añadir columnas note y payWith a auto_orders
   try {
-    await db.execute("ALTER TABLE auto_orders ADD COLUMN note TEXT");
-    await db.execute("ALTER TABLE auto_orders ADD COLUMN payWith REAL");
-    console.log("Migración exitosa: Columnas note y payWith añadidas a auto_orders.");
-  } catch (e) {}
+    const tableInfo = await query("PRAGMA table_info(auto_orders)");
+    const hasNote = tableInfo.some(c => c.name === 'note');
+    if (!hasNote) {
+      await db.execute("ALTER TABLE auto_orders ADD COLUMN note TEXT");
+      await db.execute("ALTER TABLE auto_orders ADD COLUMN payWith REAL");
+      console.log("Migración exitosa: Columnas note y payWith añadidas a auto_orders.");
+    }
+  } catch (e) {
+    console.error("Error en migración auto_orders:", e.message);
+  }
 
   console.log('Base de datos inicializada correctamente.');
 };
@@ -432,11 +438,18 @@ const updateSetting = async (key, value) => {
 
 // --- Auto Órdenes (QR/Cliente) ---
 const createAutoOrder = async ({ items, total, customerName, note, payWith, date }) => {
-  const result = await run(
-    'INSERT INTO auto_orders (items, total, customerName, note, payWith, status, date) VALUES (?, ?, ?, ?, ?, "pending", ?)',
-    [JSON.stringify(items), total, customerName, note, payWith, date]
-  );
-  return { id: Number(result.lastInsertRowid) };
+  try {
+    console.log('Intentando crear auto_order:', { customerName, total, itemsCount: items?.length });
+    const result = await run(
+      'INSERT INTO auto_orders (items, total, customerName, note, payWith, status, date) VALUES (?, ?, ?, ?, ?, "pending", ?)',
+      [JSON.stringify(items), total, customerName, note, payWith, date]
+    );
+    console.log('Auto_order creada con éxito ID:', result.lastInsertRowid);
+    return { id: Number(result.lastInsertRowid) };
+  } catch (error) {
+    console.error('DATABASE ERROR in createAutoOrder:', error);
+    throw error;
+  }
 };
 
 const getAutoOrderById = async (id) => {

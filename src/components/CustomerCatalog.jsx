@@ -100,29 +100,6 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
 
   if (view === 'order-status') {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans">
-        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 text-center border border-slate-100">
-          <div className="mb-6 flex justify-center">
-            <div className={`p-4 rounded-full ${orderStatus === 'ready' ? 'bg-green-100 text-green-600' : 'bg-indigo-100 text-indigo-600 animate-pulse'}`}>
-              {orderStatus === 'ready' ? <CheckCircle size={48} /> : <Clock size={48} />}
-            </div>
-          </div>
-          <h2 className="text-2xl font-bold text-slate-800 mb-2">
-            {orderStatus === 'ready' ? '¡Tu pedido está listo!' : 
-             orderStatus === 'preparing' ? 'Estamos preparando tu pedido' : 
-             'Pedido Pendiente'}
-          </h2>
-          <p className="text-slate-500 mb-8">
-            Orden #{orderId?.toString().slice(-4)}
-          </p>
-
-          <div className="flex justify-between mb-8 relative">
-             <div className="absolute top-1/2 left-0 w-full h-0.5 bg-slate-100 -z-10"></div>
-             {['pending', 'preparing', 'ready'].map((s, i) => (
-               <div key={s} className="flex flex-col items-center">
-                 <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center bg-white ${
-                   (i === 0 || (i === 1 && (orderStatus === 'preparing' || orderStatus === 'ready')) || (i === 2 && orderStatus === 'ready')) 
-                   ? 'border-indigo-600 text-indigo-600' : 'border-slate-200 text-slate-300'
                  }`}>
                    {i + 1}
                  </div>
