@@ -113,6 +113,15 @@ const initDb = async () => {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS auto_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      items TEXT NOT NULL,
+      total REAL NOT NULL,
+      customerName TEXT,
+      status TEXT DEFAULT 'pending',
+      date TEXT
+    );
   `);
 
   // Insertar offset de tiempo por defecto si no existe
@@ -412,6 +421,32 @@ const updateSetting = async (key, value) => {
   return { key, value };
 };
 
+// --- Auto Órdenes (QR/Cliente) ---
+const createAutoOrder = async ({ items, total, customerName, date }) => {
+  const result = await run(
+    'INSERT INTO auto_orders (items, total, customerName, status, date) VALUES (?, ?, ?, "pending", ?)',
+    [JSON.stringify(items), total, customerName, date]
+  );
+  return { id: Number(result.lastInsertRowid) };
+};
+
+const getAutoOrderById = async (id) => {
+  const rows = await query('SELECT * FROM auto_orders WHERE id = ?', [id]);
+  if (rows.length === 0) return null;
+  const order = rows[0];
+  return { ...order, items: JSON.parse(order.items) };
+};
+
+const getPendingAutoOrders = async () => {
+  const rows = await query('SELECT * FROM auto_orders WHERE status IN ("pending", "preparing") ORDER BY date DESC', []);
+  return rows.map(r => ({ ...r, items: JSON.parse(r.items) }));
+};
+
+const updateAutoOrderStatus = async (id, status) => {
+  await run('UPDATE auto_orders SET status = ? WHERE id = ?', [status, id]);
+  return { id, status };
+};
+
 module.exports = {
   db,
   initDb,
@@ -442,5 +477,9 @@ module.exports = {
   upsertCashClosing,
   markSalesAsClosed,
   getSetting,
-  updateSetting
+  updateSetting,
+  createAutoOrder,
+  getAutoOrderById,
+  getPendingAutoOrders,
+  updateAutoOrderStatus
 };

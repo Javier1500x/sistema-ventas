@@ -54,6 +54,8 @@ import {
 } from 'recharts';
 import logoImage from '/Gemini_Generated_Image_tlsnlhtlsnlhtlsn.png?url'; // Import the logo image URL
 import BarcodeScanner from './components/BarcodeScanner.jsx';
+import { QRCodeCanvas } from 'qrcode.react';
+import CustomerCatalog from './components/CustomerCatalog.jsx';
 
 // --- MOCK DATA & UTILS ---
 // En un entorno real, esto se reemplaza por llamadas a la API (fetch/axios).
@@ -65,9 +67,9 @@ import BarcodeScanner from './components/BarcodeScanner.jsx';
 // 3. Si estamos en producción web (Render), usar rutas relativas ''
 // 4. Si estamos en local, usar localhost
 const isCapacitor = Boolean(window.Capacitor && window.Capacitor.isNative);
-const API_BASE_URL = import.meta.env.VITE_API_URL || 
-                     (isCapacitor ? 'https://sistema-ventas-tjby.onrender.com' : 
-                     (import.meta.env.MODE === 'production' ? '' : 'http://localhost:3001'));
+const API_BASE_URL = import.meta.env.VITE_API_URL ||
+  (isCapacitor ? 'https://sistema-ventas-tjby.onrender.com' :
+    (import.meta.env.MODE === 'production' ? '' : 'http://localhost:3001'));
 
 console.log('--- SISTEMA INICIALIZADO ---');
 console.log('Es Capacitor (Android):', isCapacitor);
@@ -174,11 +176,49 @@ const useDarkMode = () => {
   return [darkMode, setDarkMode];
 };
 
+// --- SONIDO DE NOTIFICACIÓN ---
+const playNotificationSound = () => {
+  try {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); 
+    gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.1);
+    gainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + 0.5);
+  } catch (e) {
+    console.warn('AudioContext no soportado:', e);
+  }
+};
+
 
 /**
  * COMPONENTE PRINCIPAL (APP)
  */
 export default function App() {
+  // --- CLIENT ROUTING ---
+  const [isCustomerMode, setIsCustomerMode] = useState(window.location.hash === '#catalog');
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      setIsCustomerMode(window.location.hash === '#catalog');
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  if (isCustomerMode) {
+    return <CustomerCatalog apiBaseUrl={API_BASE_URL} formatCurrency={formatCurrency} />;
+  }
+
   // --- ESTADO GLOBAL ---
   const [user, setUser] = useState(null); // { name, role, token }
   const [view, setView] = useState('login'); // login, dashboard, pos, inventory, history
@@ -216,6 +256,10 @@ export default function App() {
   const [notification, setNotification] = useState(null);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
   const [pdfUrl, setPdfUrl] = useState('');
+
+  // Estado para Auto-Órdenes capturadas
+  const [pendingAutoOrders, setPendingAutoOrders] = useState([]);
+  const [lastNotifiedOrderId, setLastNotifiedOrderId] = useState(null);
 
   const showNotification = useCallback((msg, type = 'success') => {
     setNotification({ msg, type });
@@ -371,7 +415,7 @@ export default function App() {
           'x-user-role': user.role
         }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         showNotification(data.message, 'success');
@@ -400,20 +444,20 @@ export default function App() {
 
   useEffect(() => {
     // Si la App se inicializa y hay un usuario logueado, cargar los datos
-    if (user) { 
+    if (user) {
       // Carga inicial
       fetchProducts();
       fetchSales();
       fetchSuppliers();
       fetchSettings();
-      
+
       // Sincronización "Tiempo Real" (Polling cada 15 segundos)
       const intervalId = setInterval(() => {
         fetchProducts();
         fetchSales();
         fetchSuppliers();
       }, 15000);
-      
+
       // Limpiar intervalo si el usuario sale o el componente se desmonta
       return () => clearInterval(intervalId);
     }
@@ -452,7 +496,7 @@ export default function App() {
       } catch (speechError) {
         console.warn('SpeechSynthesis no disponible o falló:', speechError);
       }
-      
+
       setHasWelcomed(true);
 
       // 2. Simulación de notificación de stock bajo
@@ -489,6 +533,37 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [user, products, hasWelcomed]);
+
+  // --- ESCUCHA DE AUTO-PEDIDOS (POLLING) ---
+  useEffect(() => {
+    if (user && user.role !== 'customer') { // Solo admin/vendedor ven esto
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/pending-auto-orders`, {
+            headers: { 'Authorization': `Bearer ${user.token}` }
+          });
+          if (res.ok) {
+            const orders = await res.json();
+            setPendingAutoOrders(orders);
+            
+            // Si hay una orden nueva (id superior al último notificado)
+            if (orders.length > 0) {
+              const newestOrder = orders[0];
+              if (newestOrder.id !== lastNotifiedOrderId) {
+                playNotificationSound();
+                setLastNotifiedOrderId(newestOrder.id);
+                // Mostrar notificación especial
+                showNotification(`¡NUEVO PEDIDO DE ${newestOrder.customerName || 'Cliente'}!`, 'info');
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Error polling auto-orders:', err);
+        }
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [user, lastNotifiedOrderId, showNotification]);
 
   const handleDeleteSupplier = async (id) => {
     if (!window.confirm('¿Eliminar este proveedor?')) return;
@@ -547,6 +622,44 @@ export default function App() {
       console.error('Error de conexión al guardar proveedor:', error);
       showNotification('Error al guardar proveedor', 'error');
     }
+  };
+
+  const updateAutoOrderStatus = async (id, status) => {
+    if (!user || !user.token) return;
+    try {
+      await fetch(`${API_BASE_URL}/api/auto-orders/${id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.token}`
+        },
+        body: JSON.stringify({ status })
+      });
+    } catch (error) {
+      console.error('Error updating order status:', error);
+    }
+  };
+
+  const loadAutoOrder = (order) => {
+    if (!order || !order.items) return;
+    
+    order.items.forEach(item => {
+      const realProduct = products.find(p => p.id === item.id || p.id === Number(item.id));
+      if (realProduct) {
+        setCart(prev => {
+          const existing = prev.find(i => i.id === realProduct.id);
+          if (existing) {
+             return prev.map(i => i.id === realProduct.id ? { ...i, quantity: i.quantity + item.quantity } : i);
+          }
+          return [...prev, { ...realProduct, quantity: item.quantity }];
+        });
+      }
+    });
+
+    updateAutoOrderStatus(order.id, 'preparing');
+    showNotification(`Pedido de ${order.customerName || 'Cliente'} cargado`, 'success');
+    // Remover de la lista local de pendientes para evitar duplicados visuales antes del próximo polling
+    setPendingAutoOrders(prev => prev.filter(o => o.id !== order.id));
   };
 
   const handleRecordPurchase = async (purchaseData) => {
@@ -898,7 +1011,7 @@ export default function App() {
     <div className="min-h-screen bg-violet-50 text-slate-900 transition-colors duration-300">
       <div className="flex bg-violet-600 shadow-sm border-b border-violet-700 h-16 sticky top-0 z-40 px-4 md:px-8 items-center justify-between">
         <div className="flex items-center gap-3">
-          <button 
+          <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="p-2 -ml-2 text-white hover:bg-violet-500 rounded-lg lg:hidden transition-colors"
           >
@@ -935,7 +1048,7 @@ export default function App() {
       <div className="flex h-[calc(100vh-64px)] relative">
         {/* Backdrop for mobile */}
         {isMobileMenuOpen && (
-          <div 
+          <div
             className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-30 lg:hidden"
             onClick={() => setIsMobileMenuOpen(false)}
           />
@@ -1028,6 +1141,8 @@ export default function App() {
               showNotification={showNotification}
               view={view}
               onOpenCheckout={() => setIsCheckoutModalOpen(true)}
+              pendingAutoOrders={pendingAutoOrders}
+              loadAutoOrder={loadAutoOrder}
             />}
             {view === 'inventory' && (user.role === 'admin' || user.role === 'inventory_manager') && (
               <InventoryView
@@ -1268,6 +1383,19 @@ const ReceiptContent = ({ sale, storeInfo, formatCurrency, logoSrc, timeOffset }
       <div className="text-center border-t border-black border-dashed pt-2">
         <p className="whitespace-pre-line mb-2">{storeInfo.footer}</p>
         <p className="text-[10px]">* NO SE ACEPTAN DEVOLUCIONES *</p>
+      </div>
+
+      <div className="flex flex-col items-center justify-center mt-4 pt-4 border-t border-black border-dashed">
+        <p className="mb-2 font-bold text-[10px] uppercase">Ver estado del pedido</p>
+        <div className="p-2 border border-black rounded-lg">
+          <QRCodeCanvas 
+            value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${sale.id || sale.transactionId}`}
+            size={80}
+            level="H"
+            includeMargin={false}
+          />
+        </div>
+        <p className="mt-2 text-[8px] italic">#{sale.id || sale.transactionId}</p>
       </div>
     </div>
   );
@@ -1803,7 +1931,7 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
   );
 };
 
-const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, processSale, showNotification, view, onOpenCheckout }) => {
+const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, processSale, showNotification, view, onOpenCheckout, pendingAutoOrders, loadAutoOrder }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [quickCodeInput, setQuickCodeInput] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todos');
@@ -1969,6 +2097,38 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
     <div className="flex flex-col h-full gap-4 md:flex-row md:gap-8 animate-in fade-in">
       {/* Panel Izquierdo: Selección de Productos */}
       <div className="flex-1 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        {/* SECCIÓN DE PEDIDOS PENDIENTES (QR) */}
+        {pendingAutoOrders && pendingAutoOrders.length > 0 && (
+          <div className="p-4 bg-indigo-50 border-b border-indigo-100 animate-in slide-in-from-top-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-indigo-600 text-white rounded-lg shadow-lg">
+                  <Bell size={16} className="animate-bounce" />
+                </div>
+                <h3 className="font-black text-indigo-900 text-xs">PEDIDOS QR PENDIENTES</h3>
+              </div>
+              <span className="bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">{pendingAutoOrders.length}</span>
+            </div>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+              {pendingAutoOrders.map(order => (
+                <div key={order.id} className="min-w-[200px] bg-white p-3 rounded-xl border border-indigo-100 shadow-sm flex flex-col">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] font-bold text-slate-400">#{order.id}</span>
+                    <span className="text-[10px] font-bold text-indigo-600 truncate max-w-[100px]">{order.customerName || 'Cliente'}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mb-2">{order.items.length} prod. • {formatCurrency(order.total)}</p>
+                  <button 
+                    onClick={() => loadAutoOrder(order)}
+                    className="w-full py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-1"
+                  >
+                    <ShoppingCart size={12} /> Cargar al carrito
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Header del POS */}
         <div className="p-4 border-b border-slate-100 bg-white sticky top-0 z-10">
           <div className="flex flex-col md:flex-row gap-4 mb-4">
@@ -2000,7 +2160,7 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
                   }}
                 />
               </div>
-              <button 
+              <button
                 onClick={() => setIsScannerOpen(true)}
                 className="px-4 py-3 bg-violet-100 text-violet-600 rounded-xl hover:bg-violet-200 transition-colors flex items-center justify-center shadow-sm"
                 title="Escanear Código de Barras"
@@ -2162,7 +2322,7 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
       )}
 
       {isScannerOpen && (
-        <BarcodeScanner 
+        <BarcodeScanner
           onScan={handleScan}
           onClose={() => setIsScannerOpen(false)}
         />
@@ -2511,7 +2671,7 @@ const InventoryView = ({
                     value={newProd.manual_code}
                     onChange={e => setNewProd({ ...newProd, manual_code: e.target.value })}
                   />
-                  <button 
+                  <button
                     type="button"
                     onClick={() => { setScannerTarget('add'); setIsScannerOpen(true); }}
                     className="px-3 py-2 bg-violet-100 text-violet-600 rounded-lg hover:bg-violet-200 transition-colors"
@@ -2622,7 +2782,7 @@ const InventoryView = ({
                     value={editingProduct.manual_code || ''}
                     onChange={e => setEditingProduct({ ...editingProduct, manual_code: e.target.value })}
                   />
-                  <button 
+                  <button
                     type="button"
                     onClick={() => { setScannerTarget('edit'); setIsScannerOpen(true); }}
                     className="px-3 py-2 bg-violet-100 text-violet-600 rounded-lg hover:bg-violet-200 transition-colors"
@@ -2715,7 +2875,7 @@ const InventoryView = ({
       )}
 
       {isScannerOpen && (
-        <BarcodeScanner 
+        <BarcodeScanner
           onScan={handleScan}
           onClose={() => setIsScannerOpen(false)}
         />
@@ -2842,6 +3002,25 @@ const HistoryView = ({ sales, onCancelSale, onShowReceipt, timeOffset }) => {
                     </div>
                   </div>
                 )}
+                
+                {/* QR para seguimiento del cliente */}
+                <div className="mt-4 p-4 bg-indigo-50/50 rounded-xl border border-indigo-100 flex items-center justify-between">
+                  <div className="flex-1">
+                    <h5 className="text-xs font-bold text-indigo-900 mb-1 flex items-center gap-1">
+                      <ScanLine size={12} /> CÓDIGO DE SEGUIMIENTO QR
+                    </h5>
+                    <p className="text-[10px] text-slate-500 mb-2">El cliente puede escanear este código para ver el estado de su pedido en tiempo real.</p>
+                    <p className="text-[10px] font-mono text-indigo-600 bg-white px-2 py-1 rounded inline-block">#{sale.id}</p>
+                  </div>
+                  <div className="p-2 bg-white rounded-lg shadow-sm border border-indigo-100">
+                    <QRCodeCanvas 
+                      value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${sale.id}`}
+                      size={64}
+                      level="M"
+                    />
+                  </div>
+                </div>
+
                 {/* Add Cancel Sale Button */}
                 <div className="mt-4 flex justify-end gap-3">
                   <button
@@ -3012,8 +3191,8 @@ const CashClosingView = ({ timeOffset, user }) => {
         return;
       }
 
-      const payload = { 
-        ...data, 
+      const payload = {
+        ...data,
         status: isClosing ? 'closed' : 'open',
         // Asegurar que los campos numéricos sean números y no undefined
         starting_cash: Number(data.starting_cash || 0),

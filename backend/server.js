@@ -468,6 +468,47 @@ app.get('/api/dashboard-charts', async (req, res) => {
   }
 });
 
+// --- Endpoints para Auto-Órdenes (Mostrador Digital) ---
+app.post('/api/auto-orders', async (req, res) => {
+  try {
+    const { items, total, customerName } = req.body;
+    const date = getUTCDateISO();
+    const result = await createAutoOrder({ items, total, customerName, date });
+    res.status(201).json({ id: result.id, message: 'Pedido enviado con éxito' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al enviar pedido' });
+  }
+});
+
+app.get('/api/auto-orders/:id', async (req, res) => {
+  try {
+    const order = await getAutoOrderById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Pedido no encontrado' });
+    res.json(order);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener pedido' });
+  }
+});
+
+app.get('/api/pending-auto-orders', authenticateToken, async (req, res) => {
+  try {
+    const orders = await getPendingAutoOrders();
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener pedidos pendientes' });
+  }
+});
+
+app.put('/api/auto-orders/:id/status', authenticateToken, async (req, res) => {
+  try {
+    const { status } = req.body;
+    await updateAutoOrderStatus(req.params.id, status);
+    res.json({ message: 'Estado actualizado' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar estado' });
+  }
+});
+
 app.post('/api/send-report', async (req, res) => {
   try {
     const phone = await getSetting('notification_phone') || "+50585853867";
