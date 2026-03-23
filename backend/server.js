@@ -493,11 +493,12 @@ app.get('/api/public/products', async (req, res) => {
 
 app.post('/api/auto-orders', async (req, res) => {
   try {
-    const { items, total, customerName } = req.body;
+    const { items, total, customerName, note, payWith } = req.body;
     const date = getUTCDateISO();
-    const result = await createAutoOrder({ items, total, customerName, date });
+    const result = await createAutoOrder({ items, total, customerName, note, payWith, date });
     res.status(201).json({ id: result.id, message: 'Pedido enviado con éxito' });
   } catch (error) {
+    console.error('ERROR AL ENVIAR PEDIDO:', error);
     res.status(500).json({ message: 'Error al enviar pedido' });
   }
 });
