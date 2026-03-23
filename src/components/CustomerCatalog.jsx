@@ -6,7 +6,12 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   const [cart, setCart] = useState([]);
   const [orderId, setOrderId] = useState(null);
   const [orderStatus, setOrderStatus] = useState(null); // 'pending', 'preparing', 'ready'
-  const [view, setView] = useState('catalog'); // 'catalog', 'order-status'
+  const [view, setView] = useState('catalog'); // 'catalog', 'order-form', 'order-status'
+  
+  // New interaction states
+  const [customerName, setCustomerName] = useState('');
+  const [customerNote, setCustomerNote] = useState('');
+  const [payWith, setPayWith] = useState('');
 
   useEffect(() => {
     fetch(`${apiBaseUrl}/api/public/products`)
@@ -76,7 +81,9 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
         body: JSON.stringify({
           items: cart,
           total: cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
-          customerName: 'Cliente QR'
+          customerName: customerName.trim() || 'Cliente QR',
+          note: customerNote.trim(),
+          payWith: payWith ? parseFloat(payWith) : null
         })
       });
       if (response.ok) {
@@ -132,6 +139,66 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
           >
             Volver al Menú <ArrowRight size={20} />
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'order-form') {
+    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 border border-slate-100 animate-in slide-in-from-bottom-5">
+           <h2 className="text-2xl font-black text-slate-800 mb-6">Detalles del Pedido</h2>
+           
+           <div className="space-y-4 mb-8">
+             <div>
+               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Tu Nombre</label>
+               <input 
+                 type="text" 
+                 value={customerName}
+                 onChange={(e) => setCustomerName(e.target.value)}
+                 placeholder="Ej. Juan Pérez"
+                 className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
+               />
+             </div>
+             
+             <div>
+               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">¿Con cuánto pagas? (Opcional)</label>
+               <input 
+                 type="number" 
+                 value={payWith}
+                 onChange={(e) => setPayWith(e.target.value)}
+                 placeholder={`Total: ${formatCurrency(total)}`}
+                 className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all"
+               />
+             </div>
+
+             <div>
+               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">Notas adicionales</label>
+               <textarea 
+                 value={customerNote}
+                 onChange={(e) => setCustomerNote(e.target.value)}
+                 placeholder="Ej. Sin cebolla, extra salsa..."
+                 className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all h-24 resize-none"
+               />
+             </div>
+           </div>
+
+           <div className="flex gap-4">
+             <button 
+               onClick={() => setView('catalog')}
+               className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all"
+             >
+               Cancelar
+             </button>
+             <button 
+               onClick={submitOrder}
+               className="flex-2 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-500 active:scale-95 transition-all shadow-lg shadow-indigo-200"
+             >
+               Confirmar Pedido
+             </button>
+           </div>
         </div>
       </div>
     );
@@ -198,10 +265,10 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
             <p className="text-lg font-black">{formatCurrency(cart.reduce((sum, i) => sum + i.price * i.quantity, 0))}</p>
           </div>
           <button 
-            onClick={submitOrder}
+            onClick={() => setView('order-form')}
             className="bg-indigo-600 px-6 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-indigo-500 active:scale-95 transition-all text-sm"
           >
-            Enviar Pedido <ArrowRight size={16} />
+            Siguiente Paso <ArrowRight size={16} />
           </button>
         </div>
       )}

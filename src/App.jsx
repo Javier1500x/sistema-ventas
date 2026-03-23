@@ -2115,7 +2115,9 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
                     <span className="text-[10px] font-bold text-slate-400">#{order.id}</span>
                     <span className="text-[10px] font-bold text-indigo-600 truncate max-w-[100px]">{order.customerName || 'Cliente'}</span>
                   </div>
-                  <p className="text-[10px] text-slate-500 mb-2">{order.items.length} prod. • {formatCurrency(order.total)}</p>
+                  <p className="text-[10px] text-slate-500 mb-1">{order.items.length} prod. • {formatCurrency(order.total)}</p>
+                  {order.note && <p className="text-[9px] text-indigo-700 bg-indigo-50 p-1 rounded mb-1 italic">"{order.note}"</p>}
+                  {order.payWith && <p className="text-[9px] font-bold text-emerald-600 mb-2">Paga con: {formatCurrency(order.payWith)}</p>}
                   <button 
                     onClick={() => loadAutoOrder(order)}
                     className="w-full py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-1"
@@ -2211,7 +2213,7 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
                   </div>
                   <h3 className="font-semibold text-slate-800 text-sm line-clamp-2 md:line-clamp-1 mb-1" title={product.name}>{product.name}</h3>
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-500">{product.manual_code}</span>
+                    <span className="text-xs text-slate-400 truncate max-w-[60px]">Stock: {product.stock}</span>
                     <span className="font-bold text-violet-600">{formatCurrency(product.price)}</span>
                   </div>
                 </div>

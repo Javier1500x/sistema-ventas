@@ -33,8 +33,11 @@ const {
   getCashClosingByDate,
   upsertCashClosing,
   markSalesAsClosed,
-  getSetting,
-  updateSetting
+  updateSetting,
+  createAutoOrder,
+  getAutoOrderById,
+  getPendingAutoOrders,
+  updateAutoOrderStatus
 } = require('./database');
 const { getDailySummary, getSalesChartData } = require('./decisionEngine');
 const { sendWhatsAppMessage, sendLowStockAlert } = require('./notificationService');

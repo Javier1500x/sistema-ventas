@@ -119,6 +119,8 @@ const initDb = async () => {
       items TEXT NOT NULL,
       total REAL NOT NULL,
       customerName TEXT,
+      note TEXT,
+      payWith REAL,
       status TEXT DEFAULT 'pending',
       date TEXT
     );
@@ -142,6 +144,13 @@ const initDb = async () => {
   try {
     await db.execute("ALTER TABLE sales_history ADD COLUMN is_closed INTEGER DEFAULT 0");
     console.log("Migración exitosa: Columna 'is_closed' añadida.");
+  } catch (e) {}
+
+  // Migración: Añadir columnas note y payWith a auto_orders
+  try {
+    await db.execute("ALTER TABLE auto_orders ADD COLUMN note TEXT");
+    await db.execute("ALTER TABLE auto_orders ADD COLUMN payWith REAL");
+    console.log("Migración exitosa: Columnas note y payWith añadidas a auto_orders.");
   } catch (e) {}
 
   console.log('Base de datos inicializada correctamente.');
@@ -422,10 +431,10 @@ const updateSetting = async (key, value) => {
 };
 
 // --- Auto Órdenes (QR/Cliente) ---
-const createAutoOrder = async ({ items, total, customerName, date }) => {
+const createAutoOrder = async ({ items, total, customerName, note, payWith, date }) => {
   const result = await run(
-    'INSERT INTO auto_orders (items, total, customerName, status, date) VALUES (?, ?, ?, "pending", ?)',
-    [JSON.stringify(items), total, customerName, date]
+    'INSERT INTO auto_orders (items, total, customerName, note, payWith, status, date) VALUES (?, ?, ?, ?, ?, "pending", ?)',
+    [JSON.stringify(items), total, customerName, note, payWith, date]
   );
   return { id: Number(result.lastInsertRowid) };
 };
