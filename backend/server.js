@@ -471,7 +471,7 @@ app.get('/api/dashboard-charts', async (req, res) => {
 // --- Endpoints para Auto-Órdenes (Mostrador Digital) ---
 app.get('/api/public/products', async (req, res) => {
   try {
-    const products = await getProducts();
+    const products = await getAllProducts();
     // Solo enviamos datos necesarios para el catálogo público y que tengan stock
     const publicProducts = products
       .filter(p => p.stock > 0)
