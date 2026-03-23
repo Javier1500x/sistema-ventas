@@ -215,10 +215,6 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  if (isCustomerMode) {
-    return <CustomerCatalog apiBaseUrl={API_BASE_URL} formatCurrency={formatCurrency} />;
-  }
-
   // --- ESTADO GLOBAL ---
   const [user, setUser] = useState(null); // { name, role, token }
   const [view, setView] = useState('login'); // login, dashboard, pos, inventory, history
@@ -1002,7 +998,10 @@ export default function App() {
     }
   };
 
-  // --- RENDERIZADO CONDICIONAL ---
+  if (isCustomerMode) {
+    return <CustomerCatalog apiBaseUrl={API_BASE_URL} formatCurrency={formatCurrency} />;
+  }
+
   if (!user) {
     return <LoginView onLogin={handleLogin} notification={notification} />;
   }
