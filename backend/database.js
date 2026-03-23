@@ -441,8 +441,8 @@ const createAutoOrder = async ({ items, total, customerName, note, payWith, date
   try {
     console.log('Intentando crear auto_order:', { customerName, total, itemsCount: items?.length });
     const result = await run(
-      'INSERT INTO auto_orders (items, total, customerName, note, payWith, status, date) VALUES (?, ?, ?, ?, ?, "pending", ?)',
-      [JSON.stringify(items), total, customerName, note, payWith, date]
+      'INSERT INTO auto_orders (items, total, customerName, note, payWith, status, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [JSON.stringify(items), total, customerName, note, payWith, 'pending', date]
     );
     console.log('Auto_order creada con éxito ID:', result.lastInsertRowid);
     return { id: Number(result.lastInsertRowid) };
@@ -460,7 +460,7 @@ const getAutoOrderById = async (id) => {
 };
 
 const getPendingAutoOrders = async () => {
-  const rows = await query('SELECT * FROM auto_orders WHERE status IN ("pending", "preparing") ORDER BY date DESC', []);
+  const rows = await query('SELECT * FROM auto_orders WHERE status IN (?, ?) ORDER BY date DESC', ['pending', 'preparing']);
   return rows.map(r => ({ ...r, items: JSON.parse(r.items) }));
 };
 
