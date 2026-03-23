@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck } from 'lucide-react';
+import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck, QrCode } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   const [products, setProducts] = useState([]);
   const [cart, setCart] = useState([]);
   const [orderId, setOrderId] = useState(null);
-  const [orderStatus, setOrderStatus] = useState(null); // 'pending', 'preparing', 'ready'
+  const [orderData, setOrderData] = useState(null);
+  const [orderStatus, setOrderStatus] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [view, setView] = useState('catalog'); // 'catalog', 'order-form', 'order-status'
+  const [view, setView] = useState('catalog');
   
-  // New interaction states
   const [customerName, setCustomerName] = useState('');
   const [customerNote, setCustomerNote] = useState('');
   const [payWith, setPayWith] = useState('');
@@ -30,7 +31,6 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
         setProducts([]);
       });
 
-    // Revisar si venimos de un QR de estado
     const hash = window.location.hash;
     if (hash.includes('?')) {
       const queryString = hash.split('?')[1];
@@ -51,10 +51,13 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
         fetch(`${apiBaseUrl}/api/auto-orders/${orderId}`)
           .then(res => res.json())
           .then(data => {
-            if (data.status) setOrderStatus(data.status);
+            if (data.status) {
+              setOrderStatus(data.status);
+              setOrderData(data);
+            }
           })
           .catch(err => console.error('Error polling status:', err));
-      }, 5000);
+      }, 4000);
       return () => clearInterval(interval);
     }
   }, [orderId, view, apiBaseUrl]);
@@ -78,13 +81,16 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
+      const orderItems = cart.map(item => ({ id: item.id, name: item.name, price: item.price, quantity: item.quantity }));
+      const orderTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      
       const response = await fetch(`${apiBaseUrl}/api/auto-orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: cart.map(item => ({ id: item.id, name: item.name, price: item.price, quantity: item.quantity })),
-          total: cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
-          customerName: customerName.trim() || 'Cliente QR',
+          items: orderItems,
+          total: orderTotal,
+          customerName: customerName.trim() || 'Cliente',
           note: customerNote.trim(),
           payWith: payWith ? parseFloat(payWith) : null
         })
@@ -95,6 +101,7 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
       if (response.ok) {
         setOrderId(data.id);
         setOrderStatus('pending');
+        setOrderData({ items: orderItems, total: orderTotal, customerName: customerName.trim() || 'Cliente' });
         setView('order-status');
       } else {
         alert(`Error: ${data.message || 'Error al enviar pedido'}${data.detail ? '\nDetalle: ' + data.detail : ''}`);
@@ -106,104 +113,225 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
     }
   };
 
+  // --- RECEIPT QR DATA ---
+  const buildReceiptText = () => {
+    if (!orderData) return '';
+    const items = Array.isArray(orderData.items) ? orderData.items : [];
+    let text = `RECIBO #${orderId}\n`;
+    text += `Cliente: ${orderData.customerName || 'Cliente'}\n`;
+    text += `---\n`;
+    items.forEach(item => {
+      text += `${item.name} x${item.quantity} = ${formatCurrency(item.price * item.quantity)}\n`;
+    });
+    text += `---\n`;
+    text += `TOTAL: ${formatCurrency(orderData.total)}\n`;
+    text += `Gracias por su compra!`;
+    return text;
+  };
+
+  // =================== ORDER STATUS VIEW ===================
   if (view === 'order-status') {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8 font-sans">
-        <div className="w-full max-w-sm">
-          <div className="relative h-64 flex items-center justify-center mb-12">
-            <div className="absolute inset-0 bg-indigo-50 rounded-full scale-90 opacity-50 blur-3xl animate-pulse"></div>
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6 py-10 font-sans">
+        <div className="w-full max-w-sm mx-auto text-center">
+          
+          {/* Animated Icon */}
+          <div className="relative h-52 flex items-center justify-center mb-8">
+            <div className="absolute inset-0 bg-indigo-50 rounded-full scale-75 opacity-40 blur-3xl animate-pulse"></div>
+            
             {orderStatus === 'pending' && (
-              <div className="relative text-center">
-                <div className="bg-white p-8 rounded-full shadow-2xl border border-indigo-100 inline-flex">
-                  <ScanLine size={80} className="text-indigo-600 animate-pulse" />
+              <div className="relative">
+                <div className="bg-white p-6 rounded-full shadow-2xl border border-indigo-100 inline-flex mx-auto">
+                  <ScanLine size={64} className="text-indigo-600 animate-pulse" />
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mt-8 tracking-tight">Recibiendo...</h2>
-                <p className="text-slate-400 font-medium text-sm mt-2">Estamos procesando tu orden</p>
               </div>
             )}
             {orderStatus === 'preparing' && (
-              <div className="relative text-center">
-                <div className="bg-white p-8 rounded-full shadow-2xl border border-amber-100 inline-flex">
-                  <Package size={80} className="text-amber-500 animate-bounce" />
+              <div className="relative">
+                <div className="bg-white p-6 rounded-full shadow-2xl border border-amber-100 inline-flex mx-auto">
+                  <Package size={64} className="text-amber-500 animate-bounce" />
                 </div>
-                <h2 className="text-2xl font-black text-slate-800 mt-8 tracking-tight">Preparando...</h2>
-                <p className="text-slate-400 font-medium text-sm mt-2">Tu pedido está en proceso 👨‍🍳</p>
               </div>
             )}
             {orderStatus === 'ready' && (
-              <div className="relative text-center">
-                <div className="bg-white p-8 rounded-full shadow-2xl border border-emerald-100 inline-flex">
-                  <ShieldCheck size={80} className="text-emerald-500" />
+              <div className="relative">
+                <div className="bg-white p-6 rounded-full shadow-2xl border border-emerald-100 inline-flex mx-auto">
+                  <ShieldCheck size={64} className="text-emerald-500" />
                 </div>
-                <h2 className="text-2xl font-black text-emerald-600 mt-8 tracking-tight">¡LISTO!</h2>
-                <p className="text-slate-500 font-medium text-sm mt-2">Pasa a retirar tu pedido ✨</p>
               </div>
             )}
           </div>
-          <div className="flex justify-between items-center px-12 mb-12 relative">
-            <div className="absolute left-0 right-0 h-0.5 bg-slate-100 -z-10 mx-12"></div>
+
+          {/* Status Text */}
+          <div className="mb-6">
+            {orderStatus === 'pending' && (
+              <>
+                <h2 className="text-2xl font-black text-slate-800 tracking-tight">Recibido</h2>
+                <p className="text-slate-400 font-medium text-sm mt-2">Tu pedido fue registrado correctamente</p>
+              </>
+            )}
+            {orderStatus === 'preparing' && (
+              <>
+                <h2 className="text-2xl font-black text-slate-800 tracking-tight">En Proceso</h2>
+                <p className="text-slate-400 font-medium text-sm mt-2">El vendedor está atendiendo tu pedido 📦</p>
+              </>
+            )}
+            {orderStatus === 'ready' && (
+              <>
+                <h2 className="text-2xl font-black text-emerald-600 tracking-tight">¡Listo para Retirar!</h2>
+                <p className="text-slate-500 font-medium text-sm mt-2">Pasa al mostrador a recoger tus productos ✨</p>
+              </>
+            )}
+          </div>
+
+          {/* Stepper Dots */}
+          <div className="flex justify-center items-center gap-6 mb-8">
             {['pending', 'preparing', 'ready'].map((s, i) => {
               const active = (orderStatus === s) || (orderStatus === 'preparing' && i === 0) || (orderStatus === 'ready');
               return (
-                <div key={s} className={`w-3 h-3 rounded-full border-2 border-white ring-2 ${active ? 'bg-indigo-600 ring-indigo-100' : 'bg-slate-200 ring-transparent'} transition-all duration-700`} />
+                <div key={s} className="flex flex-col items-center gap-2">
+                  <div className={`w-4 h-4 rounded-full transition-all duration-700 ${active ? (s === 'ready' ? 'bg-emerald-500 scale-125' : 'bg-indigo-600 scale-125') : 'bg-slate-200'}`} />
+                  <span className={`text-[9px] font-bold uppercase tracking-wider ${active ? 'text-slate-700' : 'text-slate-300'}`}>
+                    {s === 'pending' ? 'Recibido' : s === 'preparing' ? 'Proceso' : 'Listo'}
+                  </span>
+                </div>
               );
             })}
           </div>
-          <div className="text-center border-t border-slate-50 pt-8">
-             <span className="text-[10px] font-bold text-slate-300 block mb-4 tracking-widest uppercase">Orden #{orderId}</span>
-             <button onClick={() => { setOrderId(null); setView('catalog'); setCart([]); }} className="text-slate-400 font-bold text-xs hover:text-slate-600 transition-colors">Nueva Orden</button>
+
+          {/* QR Receipt (only when ready) */}
+          {orderStatus === 'ready' && orderData && (
+            <div className="bg-slate-50 rounded-3xl p-6 mb-6 border border-slate-100">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Tu Comprobante</p>
+              <div className="bg-white p-4 rounded-2xl inline-block shadow-sm border border-slate-50 mx-auto">
+                <QRCodeSVG value={buildReceiptText()} size={160} level="M" />
+              </div>
+              <div className="mt-4 text-left bg-white rounded-2xl p-4 border border-slate-50">
+                <p className="text-[10px] font-bold text-slate-300 uppercase mb-2">Detalle</p>
+                {Array.isArray(orderData.items) && orderData.items.map((item, idx) => (
+                  <div key={idx} className="flex justify-between text-sm py-1 border-b border-slate-50 last:border-0">
+                    <span className="text-slate-600 font-medium">{item.name} <span className="text-slate-400">x{item.quantity}</span></span>
+                    <span className="text-slate-800 font-bold">{formatCurrency(item.price * item.quantity)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between text-sm pt-3 mt-2 border-t border-slate-200">
+                  <span className="font-black text-slate-800">TOTAL</span>
+                  <span className="font-black text-indigo-600">{formatCurrency(orderData.total)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="border-t border-slate-50 pt-6">
+            <span className="text-[10px] font-bold text-slate-300 block mb-3 tracking-widest uppercase">Orden #{orderId}</span>
+            <button 
+              onClick={() => { setOrderId(null); setOrderData(null); setView('catalog'); setCart([]); setCustomerName(''); setCustomerNote(''); setPayWith(''); }} 
+              className="text-slate-400 font-bold text-xs hover:text-slate-600 transition-colors"
+            >
+              Hacer otra compra
+            </button>
           </div>
         </div>
       </div>
     );
   }
 
+  // =================== ORDER FORM VIEW ===================
   if (view === 'order-form') {
     const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans">
-        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 border border-slate-100 px-6">
-           <h2 className="text-2xl font-black text-slate-800 mb-6">Completa tu Pedido</h2>
-           <div className="space-y-4 mb-8">
-             <div>
-               <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block ml-1">Tu Nombre</label>
-               <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Ej. Juan Pérez" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-600 outline-none transition-all" />
-             </div>
-             <div>
-               <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block ml-1">¿Con cuánto pagas?</label>
-               <input type="number" value={payWith} onChange={(e) => setPayWith(e.target.value)} placeholder={`Monto sugerido: ${formatCurrency(total)}`} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-600 outline-none transition-all" />
-             </div>
-             <div>
-               <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block ml-1">Notas especiales</label>
-               <textarea value={customerNote} onChange={(e) => setCustomerNote(e.target.value)} placeholder="Ej. Sin cebolla, extra salsa..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl h-24 resize-none focus:ring-2 focus:ring-indigo-600 outline-none transition-all" />
-             </div>
-           </div>
-           <div className="flex gap-4">
-             <button onClick={() => setView('catalog')} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-colors">Atrás</button>
-             <button 
-               onClick={submitOrder} 
-               disabled={isSubmitting} 
-               className={`flex-1 py-4 rounded-2xl text-white font-bold transition-all shadow-md flex items-center justify-center gap-2 ${isSubmitting ? 'bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
-             >
-               {isSubmitting ? 'Enviando...' : 'Pedir Ahora'}
-             </button>
-           </div>
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-6 py-10 font-sans">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-6 border border-slate-100">
+          <h2 className="text-xl font-black text-slate-800 mb-5 text-center">Confirma tu Pedido</h2>
+          
+          {/* Cart Summary */}
+          <div className="bg-slate-50 rounded-2xl p-4 mb-5 border border-slate-100">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Resumen</p>
+            {cart.map((item, idx) => (
+              <div key={idx} className="flex justify-between items-center text-sm py-1.5 border-b border-slate-100 last:border-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-700 font-medium">{item.name}</span>
+                  <span className="text-slate-400 text-xs">x{item.quantity}</span>
+                </div>
+                <span className="text-slate-800 font-bold">{formatCurrency(item.price * item.quantity)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between items-center text-base pt-3 mt-2 border-t border-slate-200">
+              <span className="font-black text-slate-800">Total</span>
+              <span className="font-black text-indigo-600 text-lg">{formatCurrency(total)}</span>
+            </div>
+          </div>
+
+          {/* Form Fields */}
+          <div className="space-y-4 mb-6">
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block ml-1">Tu Nombre</label>
+              <input 
+                type="text" 
+                value={customerName} 
+                onChange={(e) => setCustomerName(e.target.value)} 
+                placeholder="Ej. Juan Pérez" 
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-600 outline-none transition-all text-sm" 
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block ml-1">¿Con cuánto pagas? (Opcional)</label>
+              <input 
+                type="number" 
+                value={payWith} 
+                onChange={(e) => setPayWith(e.target.value)} 
+                placeholder={`Total: ${formatCurrency(total)}`} 
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-indigo-600 outline-none transition-all text-sm" 
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block ml-1">Notas (Opcional)</label>
+              <textarea 
+                value={customerNote} 
+                onChange={(e) => setCustomerNote(e.target.value)} 
+                placeholder="Ej. Me lo empaquetan por separado, necesito bolsa..." 
+                className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl h-20 resize-none focus:ring-2 focus:ring-indigo-600 outline-none transition-all text-sm" 
+              />
+            </div>
+          </div>
+
+          {/* Buttons */}
+          <div className="flex gap-3">
+            <button 
+              onClick={() => setView('catalog')} 
+              className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-colors text-sm"
+            >
+              Atrás
+            </button>
+            <button 
+              onClick={submitOrder} 
+              disabled={isSubmitting} 
+              className={`flex-1 py-4 rounded-2xl text-white font-bold transition-all shadow-md flex items-center justify-center gap-2 text-sm ${isSubmitting ? 'bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
+            >
+              {isSubmitting ? 'Enviando...' : 'Confirmar Pedido'}
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  // =================== CATALOG VIEW ===================
   return (
-    <div className="min-h-screen bg-white pb-24">
-      {/* Premium Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-50 px-6 py-5 flex justify-between items-center">
+    <div className="min-h-screen bg-white pb-28">
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-50 px-6 py-4 flex justify-between items-center">
         <div>
-          <h1 className="text-xl font-black text-slate-900 tracking-tighter uppercase">Menú <span className="text-indigo-600">Digital</span></h1>
-          <p className="text-[9px] text-slate-400 font-bold tracking-widest uppercase">Sabor que puedes ver</p>
+          <h1 className="text-lg font-black text-slate-900 tracking-tight uppercase">Tienda <span className="text-indigo-600">Digital</span></h1>
+          <p className="text-[9px] text-slate-400 font-bold tracking-widest uppercase">Compra fácil y rápido</p>
         </div>
         <div className="relative">
-          <div className="p-2 bg-slate-50 rounded-full hover:bg-indigo-50 transition-colors cursor-pointer" onClick={() => view === 'catalog' && cart.length > 0 && setView('order-form')}>
-            <ShoppingCart className="text-slate-800" size={24} />
+          <div 
+            className="p-2.5 bg-slate-50 rounded-2xl hover:bg-indigo-50 transition-colors cursor-pointer" 
+            onClick={() => cart.length > 0 && setView('order-form')}
+          >
+            <ShoppingCart className="text-slate-700" size={22} />
             {cart.length > 0 && (
               <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[9px] w-5 h-5 rounded-full flex items-center justify-center font-black ring-2 ring-white">
                 {cart.reduce((sum, i) => sum + i.quantity, 0)}
@@ -213,36 +341,35 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
         </div>
       </header>
 
-      {/* Modern Hero */}
-      <div className="p-6">
-        <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-2xl shadow-indigo-200">
-           <div className="relative z-10">
-             <span className="bg-white/20 backdrop-blur-md px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border border-white/10">Bienvenidos</span>
-             <h2 className="text-4xl font-black mt-4 leading-none">Pide <br/>Fácil.</h2>
-             <p className="text-indigo-100 mt-2 text-sm font-medium w-2/3">Explora nuestro menú y realiza tu orden al instante.</p>
-           </div>
-           <Star className="absolute -right-6 -bottom-6 text-white/10" size={160} />
-           <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+      {/* Hero Banner */}
+      <div className="px-6 pt-4 pb-2">
+        <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-3xl p-6 text-white relative overflow-hidden shadow-xl shadow-indigo-200/50">
+          <div className="relative z-10">
+            <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-white/10">Bienvenido</span>
+            <h2 className="text-2xl font-black mt-3 leading-tight">Haz tu pedido<br/>sin hacer fila</h2>
+            <p className="text-indigo-100 mt-1 text-xs font-medium">Escoge, ordena y recoge. Así de fácil.</p>
+          </div>
+          <Star className="absolute -right-4 -bottom-4 text-white/10" size={120} />
         </div>
       </div>
 
-      {/* Grid de Productos */}
-      <div className="px-6 grid grid-cols-2 gap-5 mb-8">
+      {/* Product Grid */}
+      <div className="px-6 pt-4 grid grid-cols-2 gap-4">
         {products.map(product => (
-          <div key={product.id} className="bg-white rounded-[2rem] p-4 flex flex-col h-full border border-slate-100 hover:shadow-xl hover:shadow-slate-100 transition-all group">
-            <div className="aspect-square bg-slate-50 rounded-[1.5rem] mb-4 flex items-center justify-center overflow-hidden relative">
-               {product.image ? (
-                 <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-               ) : (
-                 <Package className="text-slate-200" size={40} />
-               )}
+          <div key={product.id} className="bg-white rounded-3xl p-3.5 flex flex-col border border-slate-100 hover:shadow-lg transition-all group">
+            <div className="aspect-square bg-slate-50 rounded-2xl mb-3 flex items-center justify-center overflow-hidden">
+              {product.image ? (
+                <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              ) : (
+                <Package className="text-slate-200" size={36} />
+              )}
             </div>
-            <h3 className="font-bold text-slate-800 text-sm leading-tight mb-1">{product.name}</h3>
+            <h3 className="font-bold text-slate-800 text-sm leading-tight mb-1 line-clamp-2">{product.name}</h3>
             <div className="mt-auto pt-2 flex items-center justify-between">
-              <span className="text-indigo-600 font-black text-lg">{formatCurrency(product.price)}</span>
+              <span className="text-indigo-600 font-black">{formatCurrency(product.price)}</span>
               <button 
                 onClick={() => addToCart(product)}
-                className="w-10 h-10 bg-slate-900 text-white rounded-2xl flex items-center justify-center hover:bg-indigo-600 transition-all active:scale-90"
+                className="w-9 h-9 bg-slate-900 text-white rounded-xl flex items-center justify-center text-lg hover:bg-indigo-600 transition-all active:scale-90"
               >
                 +
               </button>
@@ -251,21 +378,21 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
         ))}
       </div>
 
-      {/* Floating Bar */}
-      {cart.length > 0 && view === 'catalog' && (
-        <div className="fixed bottom-8 left-6 right-6 z-50 animate-in slide-in-from-bottom-10">
-           <div className="bg-slate-900/90 backdrop-blur-xl text-white p-5 rounded-[2.5rem] shadow-2xl flex items-center justify-between border border-white/10">
-              <div className="pl-2">
-                <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Total</p>
-                <p className="text-xl font-black text-white">{formatCurrency(cart.reduce((sum, i) => sum + i.price * i.quantity, 0))}</p>
-              </div>
-              <button 
-                onClick={() => setView('order-form')}
-                className="bg-indigo-600 px-8 py-4 rounded-2xl font-black flex items-center gap-2 hover:bg-indigo-500 active:scale-95 transition-all text-sm shadow-lg shadow-indigo-600/30"
-              >
-                ORDENAR <ArrowRight size={18} />
-              </button>
-           </div>
+      {/* Floating Cart Bar */}
+      {cart.length > 0 && (
+        <div className="fixed bottom-6 left-4 right-4 z-50">
+          <div className="bg-slate-900/95 backdrop-blur-xl text-white p-4 rounded-3xl shadow-2xl flex items-center justify-between border border-white/10">
+            <div className="pl-2">
+              <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Total</p>
+              <p className="text-lg font-black">{formatCurrency(cart.reduce((sum, i) => sum + i.price * i.quantity, 0))}</p>
+            </div>
+            <button 
+              onClick={() => setView('order-form')}
+              className="bg-indigo-600 px-6 py-3.5 rounded-2xl font-black flex items-center gap-2 hover:bg-indigo-500 active:scale-95 transition-all text-sm shadow-lg shadow-indigo-600/30"
+            >
+              PEDIR <ArrowRight size={16} />
+            </button>
+          </div>
         </div>
       )}
     </div>
