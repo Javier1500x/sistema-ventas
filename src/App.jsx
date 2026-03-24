@@ -640,18 +640,20 @@ export default function App() {
   const loadAutoOrder = (order) => {
     if (!order || !order.items) return;
     
+    let newCart = [];
     order.items.forEach(item => {
       const realProduct = products.find(p => p.id === item.id || p.id === Number(item.id));
       if (realProduct) {
-        setCart(prev => {
-          const existing = prev.find(i => i.id === realProduct.id);
-          if (existing) {
-             return prev.map(i => i.id === realProduct.id ? { ...i, quantity: i.quantity + item.quantity } : i);
-          }
-          return [...prev, { ...realProduct, quantity: item.quantity }];
-        });
+        const existing = newCart.find(i => i.id === realProduct.id);
+        if (existing) {
+          existing.quantity += item.quantity;
+        } else {
+          newCart.push({ ...realProduct, quantity: item.quantity });
+        }
       }
     });
+
+    setCart(newCart);
 
     updateAutoOrderStatus(order.id, 'preparing');
     setCurrentAutoOrderId(order.id);
@@ -780,8 +782,9 @@ export default function App() {
       return false;
     }
 
-    const transactionId = invoiceNumber;
+    const transactionId = currentAutoOrderId ? currentAutoOrderId : invoiceNumber;
     const changeAmount = receivedAmount - total;
+    const currentUtcDate = new Date().toISOString();
 
     // 1. Prepara los datos para la factura
     const receiptData = {
@@ -791,7 +794,7 @@ export default function App() {
       paymentMethod: paymentMethod,
       receivedAmount: receivedAmount,
       changeAmount: changeAmount,
-      date: formatNicaraguaDateTime(new Date(), timeOffset),
+      date: currentUtcDate,
       seller: user.name,
     };
 
@@ -824,6 +827,7 @@ export default function App() {
         paymentMethod,
         receivedAmount,
         changeAmount,
+        date: currentUtcDate,
       };
 
       return fetch(`${API_BASE_URL}/api/record-sale`, {
@@ -840,7 +844,13 @@ export default function App() {
     }).catch(error => console.error('Error al registrar venta en backend:', error));
 
     setCart([]);
-    setInvoiceNumber(prev => prev + 1);
+    if (currentAutoOrderId) {
+      if (invoiceNumber <= currentAutoOrderId) {
+        setInvoiceNumber(currentAutoOrderId + 1);
+      }
+    } else {
+      setInvoiceNumber(prev => prev + 1);
+    }
     setRefreshKey(prev => prev + 1); // Forzar recarga del resumen diario
     showNotification(`Venta #${transactionId} procesada!`);
 
@@ -2901,11 +2911,13 @@ const HistoryView = ({ sales, onCancelSale, onShowReceipt, timeOffset }) => {
   const groupedSales = useMemo(() => {
     const salesMap = new Map();
     sales.forEach(item => {
-      if (!salesMap.has(item.transactionId)) {
-        salesMap.set(item.transactionId, {
-          id: item.transactionId, // Usamos transactionId como ID principal de la venta
+      const groupKey = `${item.transactionId}-${item.date}`;
+      if (!salesMap.has(groupKey)) {
+        salesMap.set(groupKey, {
+          id: groupKey, // Usamos esta clave compuesta para UI expasion
+          transactionId: item.transactionId, // Conservar ID real de la venta
           date: item.date,
-          seller: "Vendedor por Defecto", // Asumir vendedor si no viene del backend por transacción
+          seller: item.seller || "Vendedor por Defecto", // Asumir vendedor si no viene del backend por transacción
           paymentMethod: item.paymentMethod, // Tomar del primer item
           receivedAmount: item.receivedAmount, // Tomar del primer item
           change: item.changeAmount, // Tomar del primer item
@@ -2913,10 +2925,10 @@ const HistoryView = ({ sales, onCancelSale, onShowReceipt, timeOffset }) => {
           total: 0,
         });
       }
-      const transaction = salesMap.get(item.transactionId);
+      const transaction = salesMap.get(groupKey);
       transaction.items.push(item);
       transaction.total += item.price * item.quantity;
-      salesMap.set(item.transactionId, transaction);
+      salesMap.set(groupKey, transaction);
     });
     // Convertir el mapa a un array y ordenar por fecha
     return Array.from(salesMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -2941,7 +2953,7 @@ const HistoryView = ({ sales, onCancelSale, onShowReceipt, timeOffset }) => {
                   <DollarSign size={20} />
                 </div>
                 <div>
-                  <p className="font-bold text-slate-800">Factura #{String(sale.id).padStart(5, '0')}</p>
+                  <p className="font-bold text-slate-800">Factura #{String(sale.transactionId || sale.id).padStart(5, '0')}</p>
                   <p className="text-sm text-slate-500">{formatDisplayDateString(sale.date)}</p>
                 </div>
               </div>
@@ -2970,7 +2982,7 @@ const HistoryView = ({ sales, onCancelSale, onShowReceipt, timeOffset }) => {
             {/* Detalles de la venta (expandible) */}
             {expandedSaleId === sale.id && (
               <div className="border-t border-slate-200 p-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                <h4 className="font-semibold text-slate-600 mb-3">Detalles de la Factura: #{String(sale.id).padStart(5, '0')}</h4>
+                <h4 className="font-semibold text-slate-600 mb-3">Detalles de la Factura: #{String(sale.transactionId || sale.id).padStart(5, '0')}</h4>
                 <div className="bg-slate-50 rounded-lg border border-slate-100">
                   <table className="w-full text-sm text-left">
                     <thead className="text-slate-500">
@@ -3017,11 +3029,11 @@ const HistoryView = ({ sales, onCancelSale, onShowReceipt, timeOffset }) => {
                       <ScanLine size={12} /> CÓDIGO DE SEGUIMIENTO QR
                     </h5>
                     <p className="text-[10px] text-slate-500 mb-2">El cliente puede escanear este código para ver el estado de su pedido en tiempo real.</p>
-                    <p className="text-[10px] font-mono text-indigo-600 bg-white px-2 py-1 rounded inline-block">#{sale.id}</p>
+                    <p className="text-[10px] font-mono text-indigo-600 bg-white px-2 py-1 rounded inline-block">#{sale.transactionId || sale.id}</p>
                   </div>
                   <div className="p-2 bg-white rounded-lg shadow-sm border border-indigo-100">
                     <QRCodeCanvas 
-                      value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${sale.id}`}
+                      value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${sale.transactionId || sale.id}`}
                       size={64}
                       level="M"
                     />
@@ -3037,7 +3049,7 @@ const HistoryView = ({ sales, onCancelSale, onShowReceipt, timeOffset }) => {
                     <Printer size={18} /> Imprimir Factura
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); onCancelSale(sale.id); }} // Prevent toggling details
+                    onClick={(e) => { e.stopPropagation(); onCancelSale(sale.transactionId || sale.id); }} // Prevent toggling details
                     className="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors shadow-sm"
                   >
                     <X size={18} /> Cancelar Venta

@@ -132,8 +132,12 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   // =================== ORDER STATUS VIEW ===================
   if (view === 'order-status') {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-6 py-10 font-sans">
-        <div className="w-full max-w-sm mx-auto text-center">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 relative overflow-hidden flex flex-col items-center justify-center px-6 py-10 font-sans">
+        {/* Background Decorative Elements */}
+        <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-indigo-200/50 rounded-full mix-blend-multiply filter blur-3xl opacity-70"></div>
+        <div className="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-violet-200/50 rounded-full mix-blend-multiply filter blur-3xl opacity-70"></div>
+
+        <div className="w-full max-w-sm mx-auto text-center relative z-10 bg-white/60 backdrop-blur-xl p-8 rounded-[2rem] shadow-2xl shadow-indigo-100/50 border border-white/50">
           
           {/* Animated Icon */}
           <div className="relative h-52 flex items-center justify-center mb-8">
@@ -203,8 +207,8 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
           {orderStatus === 'ready' && orderData && (
             <div className="bg-slate-50 rounded-3xl p-6 mb-6 border border-slate-100">
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Tu Comprobante</p>
-              <div className="bg-white p-4 rounded-2xl inline-block shadow-sm border border-slate-50 mx-auto">
-                <QRCodeSVG value={buildReceiptText()} size={160} level="M" />
+              <div className="bg-white p-4 rounded-2xl inline-block shadow-sm border border-slate-100 mx-auto">
+                <QRCodeSVG value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${orderId}`} size={160} level="M" />
               </div>
               <div className="mt-4 text-left bg-white rounded-2xl p-4 border border-slate-50">
                 <p className="text-[10px] font-bold text-slate-300 uppercase mb-2">Detalle</p>
