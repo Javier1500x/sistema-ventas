@@ -205,11 +205,11 @@ const playNotificationSound = () => {
  */
 export default function App() {
   // --- CLIENT ROUTING ---
-  const [isCustomerMode, setIsCustomerMode] = useState(window.location.hash === '#catalog');
+  const [isCustomerMode, setIsCustomerMode] = useState(window.location.hash.includes('#catalog'));
 
   useEffect(() => {
     const handleHashChange = () => {
-      setIsCustomerMode(window.location.hash === '#catalog');
+      setIsCustomerMode(window.location.hash.includes('#catalog'));
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -845,9 +845,7 @@ export default function App() {
 
     setCart([]);
     if (currentAutoOrderId) {
-      if (invoiceNumber <= currentAutoOrderId) {
-        setInvoiceNumber(currentAutoOrderId + 1);
-      }
+      setInvoiceNumber(prev => Math.max(prev, currentAutoOrderId + 1));
     } else {
       setInvoiceNumber(prev => prev + 1);
     }

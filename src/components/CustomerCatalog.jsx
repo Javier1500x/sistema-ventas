@@ -31,17 +31,26 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
         setProducts([]);
       });
 
-    const hash = window.location.hash;
-    if (hash.includes('?')) {
-      const queryString = hash.split('?')[1];
-      const params = new URLSearchParams(queryString);
-      const statusId = params.get('statusId');
-      if (statusId) {
-        setOrderId(statusId);
-        setView('order-status');
-        setOrderStatus('pending');
+    // Parse statusId from URL if present
+    const checkHashForStatus = () => {
+      const hash = window.location.hash;
+      if (hash.includes('?')) {
+        const queryString = hash.split('?')[1];
+        const params = new URLSearchParams(queryString);
+        const statusId = params.get('statusId');
+        if (statusId) {
+          setOrderId(statusId);
+          setView('order-status');
+          // Start as preparing if we don't know yet, polling will fix it
+          setOrderStatus(prev => prev || 'preparing'); 
+        }
       }
-    }
+    };
+
+    checkHashForStatus();
+    // Also listen for manual changes if they happen
+    window.addEventListener('hashchange', checkHashForStatus);
+    return () => window.removeEventListener('hashchange', checkHashForStatus);
   }, [apiBaseUrl]);
 
   // Polling for order status
@@ -132,12 +141,12 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   // =================== ORDER STATUS VIEW ===================
   if (view === 'order-status') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 relative overflow-hidden flex flex-col items-center justify-center px-6 py-10 font-sans">
-        {/* Background Decorative Elements */}
-        <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-indigo-200/50 rounded-full mix-blend-multiply filter blur-3xl opacity-70"></div>
-        <div className="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-violet-200/50 rounded-full mix-blend-multiply filter blur-3xl opacity-70"></div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-100 to-indigo-50 relative overflow-hidden flex flex-col items-center justify-center px-6 py-10 font-sans">
+        {/* Background Decorative Elements - Soft and slow animations */}
+        <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-indigo-300/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
+        <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-violet-300/30 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
 
-        <div className="w-full max-w-sm mx-auto text-center relative z-10 bg-white/60 backdrop-blur-xl p-8 rounded-[2rem] shadow-2xl shadow-indigo-100/50 border border-white/50">
+        <div className="w-full max-w-sm mx-auto text-center relative z-10 bg-white/80 backdrop-blur-md p-8 rounded-[2.5rem] shadow-2xl shadow-indigo-200/50 border border-white">
           
           {/* Animated Icon */}
           <div className="relative h-52 flex items-center justify-center mb-8">
@@ -205,10 +214,15 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
 
           {/* QR Receipt (only when ready) */}
           {orderStatus === 'ready' && orderData && (
-            <div className="bg-slate-50 rounded-3xl p-6 mb-6 border border-slate-100">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Tu Comprobante</p>
-              <div className="bg-white p-4 rounded-2xl inline-block shadow-sm border border-slate-100 mx-auto">
-                <QRCodeSVG value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${orderId}`} size={160} level="M" />
+            <div className="bg-slate-100/50 rounded-3xl p-6 mb-6 border border-slate-200/50">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Comprobante Digital</p>
+              <div className="bg-white p-6 rounded-2xl inline-block shadow-md border border-slate-200 mx-auto transform transition-transform hover:scale-105">
+                <QRCodeSVG 
+                  value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${orderId}`} 
+                  size={180} 
+                  level="H" 
+                  includeMargin={true}
+                />
               </div>
               <div className="mt-4 text-left bg-white rounded-2xl p-4 border border-slate-50">
                 <p className="text-[10px] font-bold text-slate-300 uppercase mb-2">Detalle</p>
