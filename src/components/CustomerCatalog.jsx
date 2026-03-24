@@ -7,6 +7,7 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   const [cart, setCart] = useState([]);
   const [orderId, setOrderId] = useState(null);
   const [orderData, setOrderData] = useState(null);
+  const [receiptData, setReceiptData] = useState(null);
   const [orderStatus, setOrderStatus] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [view, setView] = useState('catalog');
@@ -37,6 +38,16 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
       if (hash.includes('?')) {
         const queryString = hash.split('?')[1];
         const params = new URLSearchParams(queryString);
+        
+        if (hash.includes('#receipt')) {
+          const id = params.get('id');
+          if (id) {
+            setOrderId(id);
+            setView('receipt');
+            return;
+          }
+        }
+
         const statusId = params.get('statusId');
         if (statusId) {
           setOrderId(statusId);
@@ -52,6 +63,18 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
     window.addEventListener('hashchange', checkHashForStatus);
     return () => window.removeEventListener('hashchange', checkHashForStatus);
   }, [apiBaseUrl]);
+
+  // Fetch Public Receipt if in receipt view
+  useEffect(() => {
+    if (view === 'receipt' && orderId) {
+      fetch(`${apiBaseUrl}/api/public/receipts/${orderId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (!data.error) setReceiptData(data);
+        })
+        .catch(err => console.error('Error fetching receipt:', err));
+    }
+  }, [view, orderId, apiBaseUrl]);
 
   // Polling for order status
   useEffect(() => {
@@ -138,6 +161,77 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
     return text;
   };
 
+  // =================== PUBLIC RECEIPT VIEW ===================
+  if (view === 'receipt') {
+    if (!receiptData) {
+      return (
+        <div className="min-h-screen bg-slate-50 flexflex-col items-center justify-center py-20">
+           <div className="max-w-md mx-auto text-center"><p className="text-slate-500 animate-pulse">Cargando Factura Digital...</p></div>
+        </div>
+      );
+    }
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-slate-100 flex flex-col items-center justify-center px-4 py-8 font-mono">
+        <div className="w-full max-w-sm bg-white rounded-xl shadow-xl border border-slate-200 p-6 relative">
+          {/* Ticket Header */}
+          <div className="text-center mb-6 border-b border-dashed border-slate-300 pb-6">
+            <h1 className="text-2xl font-black text-slate-800 tracking-wider">COMPROBANTE</h1>
+            <p className="text-xs text-slate-500 mt-2">Factura #{String(receiptData.id).padStart(5, '0')}</p>
+            <p className="text-xs text-slate-400">{new Date(receiptData.date).toLocaleString('es-NI')}</p>
+          </div>
+
+          {/* Ticket Items */}
+          <div className="mb-6 border-b border-dashed border-slate-300 pb-6 min-h-[150px]">
+            {receiptData.items.map((item, idx) => (
+              <div key={idx} className="flex justify-between items-start mb-3 text-sm">
+                <div className="flex-1 pr-4">
+                  <p className="font-semibold text-slate-700">{item.name}</p>
+                  <p className="text-xs text-slate-400">{item.quantity}x {formatCurrency(item.price)}</p>
+                </div>
+                <div className="text-right font-semibold text-slate-800">
+                  {formatCurrency(item.price * item.quantity)}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Ticket Totals */}
+          <div className="mb-6">
+            <div className="flex justify-between items-center text-lg font-black text-indigo-700 bg-indigo-50 p-3 rounded-lg">
+              <span>TOTAL</span>
+              <span>{formatCurrency(receiptData.total)}</span>
+            </div>
+            {receiptData.paymentMethod && (
+              <div className="flex justify-between items-center mt-3 text-xs text-slate-500 font-bold uppercase tracking-wider px-2">
+                <span>MÉTODO DE PAGO</span>
+                <span className="text-slate-700 bg-slate-100 px-2 py-1 rounded">{receiptData.paymentMethod}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Ticket Footer */}
+          <div className="text-center mt-8">
+            <div className="inline-block bg-white p-3 rounded-xl border border-slate-200">
+              <QRCodeSVG 
+                value={window.location.href}
+                size={120}
+                level="M"
+                includeMargin={true}
+                fgColor="#000000"
+                bgColor="#ffffff"
+              />
+            </div>
+            <p className="text-[10px] text-slate-400 mt-4 leading-relaxed">Guarda este código QR para futuras referencias.<br/>¡Gracias por tu compra!</p>
+          </div>
+          
+          {/* Edge cutouts */}
+          <div className="absolute left-[-10px] top-[40%] w-5 h-5 bg-indigo-50 rounded-full border-r border-slate-200"></div>
+          <div className="absolute right-[-10px] top-[40%] w-5 h-5 bg-indigo-50 rounded-full border-l border-slate-200"></div>
+        </div>
+      </div>
+    );
+  }
+
   // =================== ORDER STATUS VIEW ===================
   if (view === 'order-status') {
     return (
@@ -216,12 +310,14 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
           {orderStatus === 'ready' && orderData && (
             <div className="bg-slate-100/50 rounded-3xl p-6 mb-6 border border-slate-200/50">
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Comprobante Digital</p>
-              <div className="bg-white p-6 rounded-2xl inline-block shadow-md border border-slate-200 mx-auto transform transition-transform hover:scale-105">
+              <div className="bg-white p-2 rounded-2xl inline-block shadow-md border border-slate-200 mx-auto">
                 <QRCodeSVG 
                   value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${orderId}`} 
                   size={180} 
                   level="H" 
                   includeMargin={true}
+                  fgColor="#000000"
+                  bgColor="#ffffff"
                 />
               </div>
               <div className="mt-4 text-left bg-white rounded-2xl p-4 border border-slate-50">

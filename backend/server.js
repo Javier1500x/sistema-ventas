@@ -530,6 +530,26 @@ app.get('/api/auto-orders/:id', async (req, res) => {
   }
 });
 
+// Endpoint público para ver el recibo generado a partir de una venta
+app.get('/api/public/receipts/:id', async (req, res) => {
+  try {
+    const sales = await getSaleByTransactionId(req.params.id);
+    if (!sales || sales.length === 0) {
+      return res.status(404).json({ error: 'Recibo no encontrado' });
+    }
+    const receiptData = {
+      id: req.params.id,
+      items: sales.map(s => ({ name: s.productName, quantity: s.quantity, price: s.price })),
+      total: sales.reduce((sum, s) => sum + (s.price * s.quantity), 0),
+      date: sales[0].date,
+      paymentMethod: sales[0].paymentMethod
+    };
+    res.json(receiptData);
+  } catch (error) {
+    res.status(500).json({ error: 'Error interno del servidor al obtener recibo' });
+  }
+});
+
 app.get('/api/pending-auto-orders', authenticateToken, async (req, res) => {
   try {
     const orders = await getPendingAutoOrders();

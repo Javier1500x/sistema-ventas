@@ -205,11 +205,11 @@ const playNotificationSound = () => {
  */
 export default function App() {
   // --- CLIENT ROUTING ---
-  const [isCustomerMode, setIsCustomerMode] = useState(window.location.hash.includes('#catalog'));
+  const [isCustomerMode, setIsCustomerMode] = useState(window.location.hash.includes('#catalog') || window.location.hash.includes('#receipt'));
 
   useEffect(() => {
     const handleHashChange = () => {
-      setIsCustomerMode(window.location.hash.includes('#catalog'));
+      setIsCustomerMode(window.location.hash.includes('#catalog') || window.location.hash.includes('#receipt'));
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
@@ -782,7 +782,7 @@ export default function App() {
       return false;
     }
 
-    const transactionId = currentAutoOrderId ? currentAutoOrderId : invoiceNumber;
+    const transactionId = invoiceNumber;
     const changeAmount = receivedAmount - total;
     const currentUtcDate = new Date().toISOString();
 
@@ -844,11 +844,7 @@ export default function App() {
     }).catch(error => console.error('Error al registrar venta en backend:', error));
 
     setCart([]);
-    if (currentAutoOrderId) {
-      setInvoiceNumber(prev => Math.max(prev, currentAutoOrderId + 1));
-    } else {
-      setInvoiceNumber(prev => prev + 1);
-    }
+    setInvoiceNumber(prev => prev + 1);
     setRefreshKey(prev => prev + 1); // Forzar recarga del resumen diario
     showNotification(`Venta #${transactionId} procesada!`);
 
@@ -1399,13 +1395,15 @@ const ReceiptContent = ({ sale, storeInfo, formatCurrency, logoSrc, timeOffset }
       </div>
 
       <div className="flex flex-col items-center justify-center mt-4 pt-4 border-t border-black border-dashed">
-        <p className="mb-2 font-bold text-[10px] uppercase">Ver estado del pedido</p>
-        <div className="p-2 border border-black rounded-lg">
+        <p className="mb-2 font-bold text-[10px] uppercase">Ver recibo digital</p>
+        <div className="p-2 border border-black rounded-lg bg-white">
           <QRCodeCanvas 
-            value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${sale.id || sale.transactionId}`}
+            value={`${window.location.origin}${window.location.pathname}#receipt?id=${sale.transactionId || sale.id}`}
             size={80}
             level="H"
-            includeMargin={false}
+            includeMargin={true}
+            fgColor="#000000"
+            bgColor="#ffffff"
           />
         </div>
         <p className="mt-2 text-[8px] italic">#{sale.id || sale.transactionId}</p>
@@ -3031,9 +3029,11 @@ const HistoryView = ({ sales, onCancelSale, onShowReceipt, timeOffset }) => {
                   </div>
                   <div className="p-2 bg-white rounded-lg shadow-sm border border-indigo-100">
                     <QRCodeCanvas 
-                      value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${sale.transactionId || sale.id}`}
+                      value={`${window.location.origin}${window.location.pathname}#receipt?id=${sale.transactionId || sale.id}`}
                       size={64}
                       level="M"
+                      fgColor="#000000"
+                      bgColor="#ffffff"
                     />
                   </div>
                 </div>
