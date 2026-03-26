@@ -1,6 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck, QrCode, Search } from 'lucide-react';
+import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck, QrCode, Search, SlidersHorizontal, ChevronDown, Minus, Plus } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import logoImage from '../assets/logo.png';
+
+const storeInfo = {
+  name: "PULPERÍA FÉLIX FLORES",
+  address: [
+    "B° Camilo Ortega",
+    "frente al costado oeste de la iglesia",
+    "católica"
+  ],
+  city: "Managua, Nicaragua",
+  phone: "Telf: 2222-5555",
+  footer: "¡Gracias por su compra!"
+};
 
 export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   const [products, setProducts] = useState([]);
@@ -14,6 +27,9 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Todos');
+  const [sortOption, setSortOption] = useState('name-asc');
+  const [quickViewProduct, setQuickViewProduct] = useState(null);
+  const [quickViewQuantity, setQuickViewQuantity] = useState(1);
   const [customerName, setCustomerName] = useState('');
   const [customerNote, setCustomerNote] = useState('');
   const [payWith, setPayWith] = useState('');
@@ -173,69 +189,121 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   if (view === 'receipt') {
     if (!receiptData) {
       return (
-        <div className="min-h-screen bg-slate-50 flexflex-col items-center justify-center py-20">
+        <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center py-20">
            <div className="max-w-md mx-auto text-center"><p className="text-slate-500 animate-pulse">Cargando Factura Digital...</p></div>
         </div>
       );
     }
+    
+    const subtotal = receiptData.items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const total = receiptData.total || subtotal; 
+    const change = receiptData.changeAmount >= 0 ? receiptData.changeAmount : ((receiptData.receivedAmount || 0) - total);
+
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-slate-100 flex flex-col items-center justify-center px-4 py-8 font-mono">
-        <div className="w-full max-w-sm bg-white rounded-xl shadow-xl border border-slate-200 p-6 relative">
-          {/* Ticket Header */}
-          <div className="text-center mb-6 border-b border-dashed border-slate-300 pb-6">
-            <h1 className="text-2xl font-black text-slate-800 tracking-wider">COMPROBANTE</h1>
-            <p className="text-xs text-slate-500 mt-2">Factura #{String(receiptData.id).padStart(5, '0')}</p>
-            <p className="text-xs text-slate-400">{new Date(receiptData.date).toLocaleString('es-NI')}</p>
+      <div className="min-h-screen bg-slate-200 flex flex-col items-center justify-start pt-12 pb-8 font-mono">
+        <div className="w-[300px] bg-white p-4 text-xs font-mono leading-tight text-black shadow-2xl" style={{ fontFamily: "'Courier New', Courier, monospace" }}>
+          
+          <div className="text-center mb-2">
+            <img src={logoImage} alt="Logo" className="w-20 h-20 mx-auto" />
+            {storeInfo.address.map((line, index) => (
+              <p key={index}>{line}</p>
+            ))}
+            <p>{storeInfo.city}</p>
+            <p>{storeInfo.phone}</p>
           </div>
 
-          {/* Ticket Items */}
-          <div className="mb-6 border-b border-dashed border-slate-300 pb-6 min-h-[150px]">
-            {receiptData.items.map((item, idx) => (
-              <div key={idx} className="flex justify-between items-start mb-3 text-sm">
-                <div className="flex-1 pr-4">
-                  <p className="font-semibold text-slate-700">{item.name}</p>
-                  <p className="text-xs text-slate-400">{item.quantity}x {formatCurrency(item.price)}</p>
+          <div className="mb-2 border-b border-black pb-2 border-dashed">
+            <div className="flex justify-between">
+              <span>Fecha: {new Date(receiptData.date).toLocaleDateString('es-NI', { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
+              <span>Hora: {new Date(receiptData.date).toLocaleTimeString('es-NI', { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Ticket #: {String(receiptData.id || receiptData.transactionId).padStart(6, '0')}</span>
+              <span>Caja: {receiptData.seller || "Vendido Automáticamente"}</span>
+            </div>
+          </div>
+
+          <div className="mb-2">
+            <div className="flex font-bold border-b border-black border-dashed pb-1 mb-1">
+              <span className="w-8">CANT</span>
+              <span className="flex-1 px-1">DESCRIPCION</span>
+              <span className="w-16 text-right">TOTAL</span>
+            </div>
+
+            {receiptData.items.map((item, index) => (
+              <div key={item.id || index} className="flex mb-1">
+                <span className="w-8 text-center align-top">{item.quantity}</span>
+                <div className="flex-1 px-1 flex flex-col">
+                  <span>{item.productName || item.name}</span>
+                  <span className="text-[10px] text-gray-600">
+                    {item.quantity} x {formatCurrency(item.price)}
+                  </span>
                 </div>
-                <div className="text-right font-semibold text-slate-800">
-                  {formatCurrency(item.price * item.quantity)}
-                </div>
+                <span className="w-16 text-right align-top">
+                  {formatCurrency(item.quantity * item.price)}
+                </span>
               </div>
             ))}
           </div>
 
-          {/* Ticket Totals */}
-          <div className="mb-6">
-            <div className="flex justify-between items-center text-lg font-black text-indigo-700 bg-indigo-50 p-3 rounded-lg">
-              <span>TOTAL</span>
-              <span>{formatCurrency(receiptData.total)}</span>
+          <div className="border-t border-black border-dashed pt-2 mb-4">
+            <div className="flex justify-between text-sm">
+              <span>SUBTOTAL:</span>
+              <span>{formatCurrency(subtotal)}</span>
             </div>
-            {receiptData.paymentMethod && (
-              <div className="flex justify-between items-center mt-3 text-xs text-slate-500 font-bold uppercase tracking-wider px-2">
-                <span>MÉTODO DE PAGO</span>
-                <span className="text-slate-700 bg-slate-100 px-2 py-1 rounded">{receiptData.paymentMethod}</span>
+
+            <div className="flex justify-between text-base font-bold mt-1">
+              <span>TOTAL:</span>
+              <span>{formatCurrency(total)}</span>
+            </div>
+
+            {receiptData.paymentMethod === 'Efectivo' && (
+              <>
+                <div className="flex justify-between mt-2 pt-2 border-t border-dotted border-gray-400">
+                  <span>Efectivo:</span>
+                  <span>{formatCurrency(receiptData.receivedAmount || 0)}</span>
+                </div>
+                <div className="flex justify-between font-bold">
+                  <span>Cambio:</span>
+                  <span>{formatCurrency(change > 0 ? change : 0)}</span>
+                </div>
+              </>
+            )}
+            {receiptData.paymentMethod === 'Crédito' && (
+              <div className="flex justify-between mt-2 pt-2 border-t border-dotted border-gray-400 font-bold">
+                <span>PAGO:</span>
+                <span>AL CRÉDITO</span>
               </div>
             )}
           </div>
 
-          {/* Ticket Footer */}
-          <div className="text-center mt-8">
-            <div className="inline-block bg-white p-3 rounded-xl border border-slate-200">
-              <QRCodeSVG 
-                value={window.location.href}
-                size={120}
-                level="M"
-                includeMargin={true}
-                fgColor="#000000"
-                bgColor="#ffffff"
-              />
-            </div>
-            <p className="text-[10px] text-slate-400 mt-4 leading-relaxed">Guarda este código QR para futuras referencias.<br/>¡Gracias por tu compra!</p>
+          <div className="text-center border-t border-black border-dashed pt-2">
+            <p className="whitespace-pre-line mb-2">{storeInfo.footer}</p>
+            <p className="text-[10px]">* NO SE ACEPTAN DEVOLUCIONES *</p>
           </div>
-          
-          {/* Edge cutouts */}
-          <div className="absolute left-[-10px] top-[40%] w-5 h-5 bg-indigo-50 rounded-full border-r border-slate-200"></div>
-          <div className="absolute right-[-10px] top-[40%] w-5 h-5 bg-indigo-50 rounded-full border-l border-slate-200"></div>
+
+          <div className="flex flex-col items-center justify-center mt-4 pt-4 border-t border-black border-dashed">
+             <p className="mb-2 font-bold text-[10px] uppercase">Ver recibo digital</p>
+             <div className="p-2 border border-black rounded-lg bg-white">
+               <QRCodeSVG 
+                 value={window.location.href}
+                 size={80}
+                 level="H"
+                 includeMargin={true}
+                 fgColor="#000000"
+                 bgColor="#ffffff"
+               />
+             </div>
+             <p className="mt-2 text-[8px] italic">#{receiptData.id || receiptData.transactionId}</p>
+          </div>
         </div>
+
+        <button 
+           onClick={() => { setView('catalog'); setOrderId(null); setReceiptData(null); window.location.hash = ''; }} 
+           className="mt-8 bg-slate-900 text-white px-8 py-3 rounded-full text-sm font-bold shadow-lg hover:bg-slate-800 transition-colors"
+        >
+           Hacer otra compra
+        </button>
       </div>
     );
   }
@@ -447,6 +515,12 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
     const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === 'Todos' || p.category === selectedCategory;
     return matchesSearch && matchesCategory;
+  }).sort((a, b) => {
+    switch(sortOption) {
+      case 'price-asc': return a.price - b.price;
+      case 'price-desc': return b.price - a.price;
+      case 'name-asc': default: return a.name.localeCompare(b.name);
+    }
   });
 
   return (
@@ -526,6 +600,21 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
             </button>
           ))}
         </div>
+
+        {/* Sorting Dropdown */}
+        <div className="flex items-center gap-2 mt-2 px-1">
+          <SlidersHorizontal size={16} className="text-indigo-400" />
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Ordenar:</span>
+          <select 
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value)}
+            className="bg-transparent text-sm font-semibold text-indigo-600 outline-none cursor-pointer focus:ring-0"
+          >
+            <option value="name-asc">Alfabéticamente</option>
+            <option value="price-asc">Precio: Menor a Mayor</option>
+            <option value="price-desc">Precio: Mayor a Menor</option>
+          </select>
+        </div>
       </div>
 
       {/* Product Grid */}
@@ -537,7 +626,10 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
               key={product.id} 
               className={`bg-white rounded-[2rem] p-2 flex flex-col border border-slate-100 transition-all duration-300 ${isOutOfStock ? 'opacity-75 grayscale-[0.2]' : 'hover:shadow-2xl hover:shadow-indigo-100 hover:-translate-y-1'}`}
             >
-              <div className="aspect-[4/3] bg-gradient-to-br from-slate-50 to-slate-100 rounded-3xl mb-3 flex items-center justify-center overflow-hidden relative group">
+              <div 
+                className="aspect-[4/3] bg-gradient-to-br from-slate-50 to-slate-100 rounded-3xl mb-3 flex items-center justify-center overflow-hidden relative group cursor-pointer"
+                onClick={() => { if(!isOutOfStock) { setQuickViewProduct(product); setQuickViewQuantity(1); } }}
+              >
                 {isOutOfStock && (
                   <div className="absolute inset-0 z-20 bg-black/20 backdrop-blur-[2px] flex items-center justify-center rounded-3xl">
                     <span className="bg-rose-500 text-white px-3 py-1.5 rounded-full text-[10px] font-black tracking-widest shadow-xl shadow-rose-900/50 uppercase">
@@ -584,6 +676,69 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
           </div>
         )}
       </div>
+
+      {/* Quick View Modal */}
+      {quickViewProduct && (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl animate-in slide-in-from-bottom-10 sm:zoom-in-95 duration-300">
+            <div className="relative aspect-video bg-slate-100 flex items-center justify-center">
+              <button 
+                onClick={() => setQuickViewProduct(null)}
+                className="absolute top-4 right-4 w-8 h-8 bg-white/50 backdrop-blur rounded-full flex items-center justify-center text-slate-700 hover:bg-white transition-colors z-10"
+              >
+                <X size={18} />
+              </button>
+              {quickViewProduct.image ? (
+                <img src={quickViewProduct.image} alt={quickViewProduct.name} className="w-full h-full object-cover" />
+              ) : (
+                <Package className="text-slate-300" size={64} />
+              )}
+            </div>
+            <div className="p-6">
+              <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest mb-1 block">
+                {quickViewProduct.category || 'Varios'}
+              </span>
+              <h3 className="text-xl font-black text-slate-800 leading-tight mb-2">{quickViewProduct.name}</h3>
+              <p className="text-2xl font-black text-indigo-600 mb-6">{formatCurrency(quickViewProduct.price)}</p>
+              
+              <div className="flex items-center justify-between bg-slate-50 p-2 rounded-2xl mb-6 border border-slate-100">
+                <button 
+                  onClick={() => setQuickViewQuantity(Math.max(1, quickViewQuantity - 1))}
+                  className="w-12 h-12 flex items-center justify-center rounded-xl bg-white text-slate-600 shadow-sm hover:shadow active:scale-95 transition-all disabled:opacity-50"
+                  disabled={quickViewQuantity <= 1}
+                >
+                  <Minus size={20} />
+                </button>
+                <span className="text-xl font-black w-12 text-center text-slate-800">{quickViewQuantity}</span>
+                <button 
+                  onClick={() => setQuickViewQuantity(Math.min(quickViewProduct.stock, quickViewQuantity + 1))}
+                  className="w-12 h-12 flex items-center justify-center rounded-xl bg-white text-slate-600 shadow-sm hover:shadow active:scale-95 transition-all disabled:opacity-50"
+                  disabled={quickViewQuantity >= quickViewProduct.stock}
+                >
+                  <Plus size={20} />
+                </button>
+              </div>
+
+              <button 
+                onClick={() => {
+                  setCart(prev => {
+                    const existing = prev.find(item => item.id === quickViewProduct.id);
+                    if (existing) {
+                      const maxQty = Math.min(quickViewProduct.stock, existing.quantity + quickViewQuantity);
+                      return prev.map(item => item.id === quickViewProduct.id ? { ...item, quantity: maxQty } : item);
+                    }
+                    return [...prev, { ...quickViewProduct, quantity: quickViewQuantity }];
+                  });
+                  setQuickViewProduct(null);
+                }}
+                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black tracking-wide flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-lg active:scale-95"
+              >
+                <ShoppingCart size={18} /> AÑADIR AL CARRITO
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating Cart Bar (Glassmorphism) */}
       {cart.length > 0 && (
