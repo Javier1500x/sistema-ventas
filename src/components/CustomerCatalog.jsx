@@ -33,6 +33,8 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   const [customerName, setCustomerName] = useState('');
   const [customerNote, setCustomerNote] = useState('');
   const [payWith, setPayWith] = useState('');
+  const [pastOrders, setPastOrders] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     fetch(`${apiBaseUrl}/api/public/products`)
@@ -44,11 +46,21 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
           console.error('Invalid products data:', data);
           setProducts([]);
         }
+        setIsLoading(false);
       })
       .catch(err => {
         console.error('Error fetching products:', err);
         setProducts([]);
+        setIsLoading(false);
       });
+
+    // Cargar historial local
+    try {
+      const saved = localStorage.getItem('customer_past_orders');
+      if (saved) setPastOrders(JSON.parse(saved));
+    } catch (e) {
+      console.error('Error loading past orders:', e);
+    }
 
     // Parse statusId from URL if present
     const checkHashForStatus = () => {
@@ -159,6 +171,11 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
         setOrderStatus('pending');
         setOrderData({ items: orderItems, total: orderTotal, customerName: customerName.trim() || 'Cliente' });
         setView('order-status');
+        
+        // Guardar en historial local
+        const newPast = [{ id: data.id, date: new Date().toISOString(), total: orderTotal }, ...pastOrders].slice(0, 10);
+        setPastOrders(newPast);
+        localStorage.setItem('customer_past_orders', JSON.stringify(newPast));
       } else {
         alert(`Error: ${data.message || 'Error al enviar pedido'}${data.detail ? '\nDetalle: ' + data.detail : ''}`);
       }
@@ -170,19 +187,13 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   };
 
   // --- RECEIPT QR DATA ---
-  const buildReceiptText = () => {
-    if (!orderData) return '';
-    const items = Array.isArray(orderData.items) ? orderData.items : [];
-    let text = `RECIBO #${orderId}\n`;
-    text += `Cliente: ${orderData.customerName || 'Cliente'}\n`;
-    text += `---\n`;
-    items.forEach(item => {
-      text += `${item.name} x${item.quantity} = ${formatCurrency(item.price * item.quantity)}\n`;
-    });
-    text += `---\n`;
-    text += `TOTAL: ${formatCurrency(orderData.total)}\n`;
-    text += `Gracias por su compra!`;
-    return text;
+  const handleShareWhatsApp = () => {
+    const text = `🧾 *MI RECIBO - ${storeInfo.name}*\nVer mi ticket aquí: ${window.location.href}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   // =================== PUBLIC RECEIPT VIEW ===================
@@ -296,11 +307,27 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
              </div>
              <p className="mt-2 text-[8px] italic">#{receiptData.id || receiptData.transactionId}</p>
           </div>
+          
+          {/* Actions */}
+          <div className="mt-6 flex flex-col gap-2 print:hidden">
+            <button 
+              onClick={handleShareWhatsApp}
+              className="flex items-center justify-center gap-2 w-full py-3 bg-[#25D366] text-white rounded-xl font-bold text-xs shadow-md active:scale-95 transition-all"
+            >
+              <Send size={14} /> Compartir por WhatsApp
+            </button>
+            <button 
+              onClick={handlePrint}
+              className="flex items-center justify-center gap-2 w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs border border-slate-200 active:scale-95 transition-all"
+            >
+              <Printer size={14} /> Imprimir / Guardar PDF
+            </button>
+          </div>
         </div>
 
         <button 
            onClick={() => { setView('catalog'); setOrderId(null); setReceiptData(null); window.location.hash = ''; }} 
-           className="mt-8 bg-slate-900 text-white px-8 py-3 rounded-full text-sm font-bold shadow-lg hover:bg-slate-800 transition-colors"
+           className="mt-8 bg-slate-900 text-white px-8 py-3 rounded-full text-sm font-bold shadow-lg hover:bg-slate-800 transition-colors print:hidden"
         >
            Hacer otra compra
         </button>
@@ -439,12 +466,20 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
           <div className="bg-slate-50 rounded-2xl p-4 mb-5 border border-slate-100">
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Resumen</p>
             {cart.map((item, idx) => (
-              <div key={idx} className="flex justify-between items-center text-sm py-1.5 border-b border-slate-100 last:border-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-700 font-medium">{item.name}</span>
-                  <span className="text-slate-400 text-xs">x{item.quantity}</span>
+              <div key={idx} className="flex justify-between items-center text-sm py-2 border-b border-slate-100 last:border-0">
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => removeFromCart(item.id)}
+                    className="w-6 h-6 flex items-center justify-center rounded-full bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                  <div className="flex flex-col">
+                    <span className="text-slate-700 font-bold">{item.name}</span>
+                    <span className="text-slate-400 text-[10px]">x{item.quantity} · {formatCurrency(item.price)}</span>
+                  </div>
                 </div>
-                <span className="text-slate-800 font-bold">{formatCurrency(item.price * item.quantity)}</span>
+                <span className="text-slate-800 font-black">{formatCurrency(item.price * item.quantity)}</span>
               </div>
             ))}
             <div className="flex justify-between items-center text-base pt-3 mt-2 border-t border-slate-200">
@@ -535,9 +570,20 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
             Tienda <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600">Digital</span>
           </h1>
         </div>
-        <div className="relative">
+        <div className="flex items-center gap-3">
+          {/* My Orders Button */}
+          {pastOrders.length > 0 && (
+            <button 
+              onClick={() => setView('my-orders')}
+              className="p-3 bg-white rounded-full shadow-md shadow-indigo-100 border border-indigo-50 active:scale-95 flex items-center justify-center text-slate-400 hover:text-indigo-600 transition-colors"
+              title="Mis Pedidos"
+            >
+              <History size={20} />
+            </button>
+          )}
+
           <div 
-            className="p-3 bg-white rounded-full shadow-md shadow-indigo-100 hover:shadow-lg transition-all cursor-pointer border border-indigo-50 active:scale-95 flex items-center justify-center group" 
+            className="p-3 bg-white rounded-full shadow-md shadow-indigo-100 hover:shadow-lg transition-all cursor-pointer border border-indigo-50 active:scale-95 flex items-center justify-center group relative" 
             onClick={() => cart.length > 0 && setView('order-form')}
           >
             <ShoppingCart className="text-indigo-600 group-hover:scale-110 transition-transform" size={24} />
@@ -619,8 +665,24 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
 
       {/* Product Grid */}
       <div className="px-6 pt-2 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-        {filteredProducts.map(product => {
+        {isLoading ? (
+          // Skeleton Loading
+          [1,2,3,4].map(n => (
+            <div key={n} className="bg-white rounded-[2rem] p-2 flex flex-col border border-slate-100 animate-pulse">
+              <div className="aspect-[4/3] bg-slate-100 rounded-3xl mb-3"></div>
+              <div className="px-3 pb-3 space-y-2">
+                <div className="h-4 bg-slate-100 rounded w-3/4"></div>
+                <div className="h-3 bg-slate-100 rounded w-1/2"></div>
+                <div className="flex justify-between items-center pt-2">
+                  <div className="h-6 bg-slate-100 rounded w-1/3"></div>
+                  <div className="w-10 h-10 bg-slate-100 rounded-xl"></div>
+                </div>
+              </div>
+            </div>
+          ))
+        ) : filteredProducts.map(product => {
           const isOutOfStock = product.stock <= 0;
+          const isLowStock = product.stock > 0 && product.stock <= 5;
           return (
             <div 
               key={product.id} 
@@ -634,6 +696,13 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
                   <div className="absolute inset-0 z-20 bg-black/20 backdrop-blur-[2px] flex items-center justify-center rounded-3xl">
                     <span className="bg-rose-500 text-white px-3 py-1.5 rounded-full text-[10px] font-black tracking-widest shadow-xl shadow-rose-900/50 uppercase">
                       Agotado
+                    </span>
+                  </div>
+                )}
+                {isLowStock && !isOutOfStock && (
+                  <div className="absolute top-3 left-3 z-20">
+                    <span className="bg-amber-500 text-white px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-tighter shadow-lg shadow-amber-900/20 flex items-center gap-1">
+                      <Clock size={10} /> ¡Quedan {product.stock}!
                     </span>
                   </div>
                 )}
@@ -719,22 +788,36 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
                 </button>
               </div>
 
-              <button 
-                onClick={() => {
-                  setCart(prev => {
-                    const existing = prev.find(item => item.id === quickViewProduct.id);
-                    if (existing) {
-                      const maxQty = Math.min(quickViewProduct.stock, existing.quantity + quickViewQuantity);
-                      return prev.map(item => item.id === quickViewProduct.id ? { ...item, quantity: maxQty } : item);
-                    }
-                    return [...prev, { ...quickViewProduct, quantity: quickViewQuantity }];
-                  });
-                  setQuickViewProduct(null);
-                }}
-                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black tracking-wide flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-lg active:scale-95"
-              >
-                <ShoppingCart size={18} /> AÑADIR AL CARRITO
-              </button>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => {
+                    setCart(prev => {
+                      const existing = prev.find(item => item.id === quickViewProduct.id);
+                      if (existing) {
+                        const maxQty = Math.min(quickViewProduct.stock, existing.quantity + quickViewQuantity);
+                        return prev.map(item => item.id === quickViewProduct.id ? { ...item, quantity: maxQty } : item);
+                      }
+                      return [...prev, { ...quickViewProduct, quantity: quickViewQuantity }];
+                    });
+                    setQuickViewProduct(null);
+                  }}
+                  className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-black tracking-wide flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-lg active:scale-95"
+                >
+                  <Plus size={18} /> {cart.find(i => i.id === quickViewProduct.id) ? 'ACTUALIZAR' : 'AÑADIR'}
+                </button>
+                
+                {cart.find(i => i.id === quickViewProduct.id) && (
+                  <button 
+                    onClick={() => {
+                      removeFromCart(quickViewProduct.id);
+                      setQuickViewProduct(null);
+                    }}
+                    className="w-14 h-14 bg-rose-50 text-rose-500 rounded-2xl flex items-center justify-center hover:bg-rose-100 active:scale-95 transition-all"
+                  >
+                    <Trash2 size={24} />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -763,6 +846,58 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
               COMPRAR <ArrowRight size={18} />
             </button>
           </div>
+        </div>
+      )}
+      {/* My Orders View */}
+      {view === 'my-orders' && (
+        <div className="fixed inset-0 z-[70] bg-slate-50 flex flex-col p-6 overflow-y-auto animate-in slide-in-from-right duration-300">
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-2xl font-black text-slate-800">Mis Pedidos</h2>
+            <button 
+              onClick={() => setView('catalog')}
+              className="w-10 h-10 bg-white shadow-md rounded-full flex items-center justify-center text-slate-500"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          
+          <div className="space-y-4">
+            {pastOrders.map((order, idx) => (
+              <div 
+                key={idx} 
+                onClick={() => { setOrderId(order.id); setView('receipt'); }}
+                className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center justify-between active:scale-[0.98] transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+                    <History size={24} />
+                  </div>
+                  <div>
+                    <p className="font-black text-slate-800 text-sm">Pedido #{order.id}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase">{new Date(order.date).toLocaleDateString('es-NI')}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-black text-indigo-600">{formatCurrency(order.total)}</p>
+                  <p className="text-[10px] text-slate-300 font-bold uppercase">Ver Ticket <ArrowRight size={8} className="inline ml-1" /></p>
+                </div>
+              </div>
+            ))}
+          </div>
+          
+          {pastOrders.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <History size={48} className="text-slate-200 mb-4" />
+              <p className="text-slate-400 font-bold">No tienes pedidos anteriores</p>
+            </div>
+          )}
+          
+          <button 
+            onClick={() => setView('catalog')}
+            className="mt-8 w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-bold text-sm"
+          >
+            Volver a la tienda
+          </button>
         </div>
       )}
     </div>
