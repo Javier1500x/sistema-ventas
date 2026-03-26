@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck, QrCode, Search, SlidersHorizontal, ChevronDown, Minus, Plus } from 'lucide-react';
+import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck, QrCode, Search, SlidersHorizontal, ChevronDown, Minus, Plus, Trash2, History, Send, Printer } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import logoImage from '/Gemini_Generated_Image_tlsnlhtlsnlhtlsn.png?url';
 
