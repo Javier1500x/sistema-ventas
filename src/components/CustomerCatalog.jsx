@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck, QrCode, Search, SlidersHorizontal, ChevronDown, Minus, Plus } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import logoImage from '../assets/logo.png';
+import logoImage from '/Gemini_Generated_Image_tlsnlhtlsnlhtlsn.png?url';
 
 const storeInfo = {
   name: "PULPERÍA FÉLIX FLORES",
