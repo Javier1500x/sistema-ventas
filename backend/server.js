@@ -38,7 +38,8 @@ const {
   createAutoOrder,
   getAutoOrderById,
   getPendingAutoOrders,
-  updateAutoOrderStatus
+  updateAutoOrderStatus,
+  getNextTransactionId
 } = require('./database');
 const { getDailySummary, getSalesChartData } = require('./decisionEngine');
 const { sendWhatsAppMessage, sendLowStockAlert } = require('./notificationService');
@@ -201,6 +202,16 @@ app.get('/api/next-manual-code', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error al obtener siguiente código manual:', error);
     res.status(500).json({ message: 'Error en el servidor al obtener código manual.' });
+  }
+});
+
+app.get('/api/next-transaction-id', authenticateToken, async (req, res) => {
+  try {
+    const nextId = await getNextTransactionId();
+    res.status(200).json({ nextId });
+  } catch (error) {
+    console.error('Error al obtener el siguiente ID de transacción:', error);
+    res.status(500).json({ message: 'Error en el servidor al obtener el ID de transacción.' });
   }
 });
 
@@ -476,15 +487,15 @@ app.get('/api/dashboard-charts', async (req, res) => {
 app.get('/api/public/products', async (req, res) => {
   try {
     const products = await getAllProducts();
-    // Solo enviamos datos necesarios para el catálogo público y que tengan stock
+    // Enviamos el catálogo público, incluyendo los que no tienen stock para poder mostrarlos como agotados
     const publicProducts = products
-      .filter(p => p.stock > 0)
       .map(p => ({
         id: p.id,
         name: p.name,
         price: p.price,
         image: p.image,
-        category: p.category
+        category: p.category,
+        stock: p.stock
       }));
     res.json(publicProducts);
   } catch (error) {
@@ -499,6 +510,15 @@ app.post('/api/auto-orders', async (req, res) => {
     
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'El carrito está vacío o es inválido' });
+    }
+
+    // Validación de stock
+    const allProducts = await getAllProducts();
+    for (const item of items) {
+      const dbProduct = allProducts.find(p => String(p.id) === String(item.id));
+      if (!dbProduct || dbProduct.stock < item.quantity) {
+        return res.status(400).json({ message: `El producto "${item.name}" no tiene stock suficiente. Disponible: ${dbProduct ? dbProduct.stock : 0}.` });
+      }
     }
 
     const date = getUTCDateISO();
@@ -561,8 +581,8 @@ app.get('/api/pending-auto-orders', authenticateToken, async (req, res) => {
 
 app.put('/api/auto-orders/:id/status', authenticateToken, async (req, res) => {
   try {
-    const { status } = req.body;
-    await updateAutoOrderStatus(req.params.id, status);
+    const { status, transactionId } = req.body;
+    await updateAutoOrderStatus(req.params.id, status, transactionId);
     res.json({ message: 'Estado actualizado' });
   } catch (error) {
     res.status(500).json({ message: 'Error al actualizar estado' });

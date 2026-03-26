@@ -621,16 +621,18 @@ export default function App() {
     }
   };
 
-  const updateAutoOrderStatus = async (id, status) => {
+  const updateAutoOrderStatus = async (id, status, transactionId = null) => {
     if (!user || !user.token) return;
     try {
+      const body = { status };
+      if (transactionId !== null) body.transactionId = transactionId;
       await fetch(`${API_BASE_URL}/api/auto-orders/${id}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${user.token}`
         },
-        body: JSON.stringify({ status })
+        body: JSON.stringify(body)
       });
     } catch (error) {
       console.error('Error updating order status:', error);
@@ -772,7 +774,7 @@ export default function App() {
     }));
   };
 
-  const processSale = (paymentMethod, receivedAmount) => {
+  const processSale = async (paymentMethod, receivedAmount) => {
     if (cart.length === 0) return false;
 
     const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -782,7 +784,22 @@ export default function App() {
       return false;
     }
 
-    const transactionId = invoiceNumber;
+    let transactionId = invoiceNumber;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/next-transaction-id`, {
+        headers: {
+          'Authorization': `Bearer ${user.token}`,
+          'x-user-role': user.role
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        transactionId = data.nextId;
+      }
+    } catch (e) {
+      console.error("Failed to fetch next transaction ID", e);
+    }
+
     const changeAmount = receivedAmount - total;
     const currentUtcDate = new Date().toISOString();
 
@@ -838,13 +855,13 @@ export default function App() {
     })).then(async () => {
       fetchSales(); // Recargar historial después de sincronizar con el backend
       if (currentAutoOrderId) {
-        await updateAutoOrderStatus(currentAutoOrderId, 'ready');
+        await updateAutoOrderStatus(currentAutoOrderId, 'ready', transactionId);
         setCurrentAutoOrderId(null);
       }
     }).catch(error => console.error('Error al registrar venta en backend:', error));
 
     setCart([]);
-    setInvoiceNumber(prev => prev + 1);
+    setInvoiceNumber(transactionId + 1);
     setRefreshKey(prev => prev + 1); // Forzar recarga del resumen diario
     showNotification(`Venta #${transactionId} procesada!`);
 

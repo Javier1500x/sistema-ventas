@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck, QrCode } from 'lucide-react';
+import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck, QrCode, Search } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
@@ -12,6 +12,8 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [view, setView] = useState('catalog');
   
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('Todos');
   const [customerName, setCustomerName] = useState('');
   const [customerNote, setCustomerNote] = useState('');
   const [payWith, setPayWith] = useState('');
@@ -95,9 +97,15 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   }, [orderId, view, apiBaseUrl]);
 
   const addToCart = (product) => {
+    if (product.stock <= 0) return; // Validación estricta
+    
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
+        if (existing.quantity >= product.stock) {
+          alert(`¡Solo hay ${product.stock} unidades disponibles!`);
+          return prev;
+        }
         return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
       }
       return [...prev, { ...product, quantity: 1 }];
@@ -312,7 +320,7 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Comprobante Digital</p>
               <div className="bg-white p-2 rounded-2xl inline-block shadow-md border border-slate-200 mx-auto">
                 <QRCodeSVG 
-                  value={`${window.location.origin}${window.location.pathname}#catalog?statusId=${orderId}`} 
+                  value={`${window.location.origin}${window.location.pathname}#receipt?id=${orderData.transactionId || orderId}`} 
                   size={180} 
                   level="H" 
                   includeMargin={true}
@@ -432,22 +440,35 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   }
 
   // =================== CATALOG VIEW ===================
+  // Obtener categorías únicas dinámicamente
+  const categories = ['Todos', ...new Set(products.map(p => p.category).filter(Boolean))];
+
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = selectedCategory === 'Todos' || p.category === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
+
   return (
-    <div className="min-h-screen bg-white pb-28">
-      {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-50 px-6 py-4 flex justify-between items-center">
+    <div className="min-h-screen bg-slate-50 pb-32 font-sans selection:bg-indigo-300">
+      {/* Dynamic Header */}
+      <header className="sticky top-0 z-50 bg-white/70 backdrop-blur-2xl border-b border-indigo-50 px-6 py-5 flex justify-between items-center shadow-sm shadow-indigo-100/50">
         <div>
-          <h1 className="text-lg font-black text-slate-900 tracking-tight uppercase">Tienda <span className="text-indigo-600">Digital</span></h1>
-          <p className="text-[9px] text-slate-400 font-bold tracking-widest uppercase">Compra fácil y rápido</p>
+          <h1 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 flex items-center justify-center text-white shadow-lg shadow-indigo-200">
+              <ShoppingCart size={16} />
+            </div>
+            Tienda <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-violet-600">Digital</span>
+          </h1>
         </div>
         <div className="relative">
           <div 
-            className="p-2.5 bg-slate-50 rounded-2xl hover:bg-indigo-50 transition-colors cursor-pointer" 
+            className="p-3 bg-white rounded-full shadow-md shadow-indigo-100 hover:shadow-lg transition-all cursor-pointer border border-indigo-50 active:scale-95 flex items-center justify-center group" 
             onClick={() => cart.length > 0 && setView('order-form')}
           >
-            <ShoppingCart className="text-slate-700" size={22} />
+            <ShoppingCart className="text-indigo-600 group-hover:scale-110 transition-transform" size={24} />
             {cart.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[9px] w-5 h-5 rounded-full flex items-center justify-center font-black ring-2 ring-white">
+              <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center font-black shadow-lg shadow-rose-300 animate-bounce">
                 {cart.reduce((sum, i) => sum + i.quantity, 0)}
               </span>
             )}
@@ -455,56 +476,136 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
         </div>
       </header>
 
-      {/* Hero Banner */}
-      <div className="px-6 pt-4 pb-2">
-        <div className="bg-gradient-to-br from-indigo-600 to-violet-700 rounded-3xl p-6 text-white relative overflow-hidden shadow-xl shadow-indigo-200/50">
-          <div className="relative z-10">
-            <span className="bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border border-white/10">Bienvenido</span>
-            <h2 className="text-2xl font-black mt-3 leading-tight">Haz tu pedido<br/>sin hacer fila</h2>
-            <p className="text-indigo-100 mt-1 text-xs font-medium">Escoge, ordena y recoge. Así de fácil.</p>
+      {/* Hero Banner with Modern Gradient */}
+      <div className="px-6 pt-6 pb-4">
+        <div className="bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-700 rounded-[2rem] p-8 text-white relative overflow-hidden shadow-2xl shadow-indigo-300">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+          <div className="absolute bottom-0 left-0 w-64 h-64 bg-black/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
+          
+          <div className="relative z-10 flex flex-col h-full justify-center">
+            <span className="bg-white/20 backdrop-blur-md px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border border-white/20 w-max shadow-sm mb-4">
+              Bienvenido 👋
+            </span>
+            <h2 className="text-3xl font-black leading-tight drop-shadow-md">
+              Lo mejor, <br/> sin hacer fila.
+            </h2>
+            <p className="text-indigo-100 mt-2 text-sm font-medium opacity-90">Selecciona, ordena y recoge.</p>
           </div>
-          <Star className="absolute -right-4 -bottom-4 text-white/10" size={120} />
+        </div>
+      </div>
+
+      {/* Search & Categories */}
+      <div className="px-6 space-y-4">
+        {/* Search Bar */}
+        <div className="relative group">
+          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+            <Search className="text-indigo-300 group-focus-within:text-indigo-600 transition-colors" size={20} />
+          </div>
+          <input 
+            type="text" 
+            placeholder="¿Qué estás buscando hoy?" 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-12 pr-4 py-4 bg-white rounded-2xl shadow-sm border border-slate-100 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 focus:outline-none transition-all text-slate-700 font-medium"
+          />
+        </div>
+
+        {/* Categories Carousel */}
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide snap-x">
+          {categories.map((cat, idx) => (
+            <button
+              key={idx}
+              onClick={() => setSelectedCategory(cat)}
+              className={`snap-center shrink-0 px-5 py-2.5 rounded-2xl text-sm font-bold transition-all ${
+                selectedCategory === cat 
+                  ? 'bg-slate-800 text-white shadow-lg shadow-slate-300 scale-100' 
+                  : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 scale-95'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Product Grid */}
-      <div className="px-6 pt-4 grid grid-cols-2 gap-4">
-        {products.map(product => (
-          <div key={product.id} className="bg-white rounded-3xl p-3.5 flex flex-col border border-slate-100 hover:shadow-lg transition-all group">
-            <div className="aspect-square bg-slate-50 rounded-2xl mb-3 flex items-center justify-center overflow-hidden">
-              {product.image ? (
-                <img src={product.image} alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-              ) : (
-                <Package className="text-slate-200" size={36} />
-              )}
+      <div className="px-6 pt-2 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        {filteredProducts.map(product => {
+          const isOutOfStock = product.stock <= 0;
+          return (
+            <div 
+              key={product.id} 
+              className={`bg-white rounded-[2rem] p-2 flex flex-col border border-slate-100 transition-all duration-300 ${isOutOfStock ? 'opacity-75 grayscale-[0.2]' : 'hover:shadow-2xl hover:shadow-indigo-100 hover:-translate-y-1'}`}
+            >
+              <div className="aspect-[4/3] bg-gradient-to-br from-slate-50 to-slate-100 rounded-3xl mb-3 flex items-center justify-center overflow-hidden relative group">
+                {isOutOfStock && (
+                  <div className="absolute inset-0 z-20 bg-black/20 backdrop-blur-[2px] flex items-center justify-center rounded-3xl">
+                    <span className="bg-rose-500 text-white px-3 py-1.5 rounded-full text-[10px] font-black tracking-widest shadow-xl shadow-rose-900/50 uppercase">
+                      Agotado
+                    </span>
+                  </div>
+                )}
+                {product.image ? (
+                  <img src={product.image} alt={product.name} className={`w-full h-full object-cover transition-transform duration-700 ${!isOutOfStock && 'group-hover:scale-110'}`} />
+                ) : (
+                  <Package className="text-slate-300" size={48} />
+                )}
+              </div>
+              <div className="px-3 pb-3 flex flex-col flex-1">
+                <h3 className="font-bold text-slate-800 text-sm leading-tight mb-2 line-clamp-2 min-h-[40px]">{product.name}</h3>
+                <div className="mt-auto flex items-end justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">{product.category || 'Varios'}</span>
+                    <span className="text-indigo-600 font-black text-lg">{formatCurrency(product.price)}</span>
+                  </div>
+                  <button 
+                    onClick={() => !isOutOfStock && addToCart(product)}
+                    disabled={isOutOfStock}
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-light transition-all ${
+                      isOutOfStock 
+                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                        : 'bg-slate-900 text-white hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-300 active:scale-90 active:bg-indigo-700'
+                    }`}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
             </div>
-            <h3 className="font-bold text-slate-800 text-sm leading-tight mb-1 line-clamp-2">{product.name}</h3>
-            <div className="mt-auto pt-2 flex items-center justify-between">
-              <span className="text-indigo-600 font-black">{formatCurrency(product.price)}</span>
-              <button 
-                onClick={() => addToCart(product)}
-                className="w-9 h-9 bg-slate-900 text-white rounded-xl flex items-center justify-center text-lg hover:bg-indigo-600 transition-all active:scale-90"
-              >
-                +
-              </button>
+          );
+        })}
+        {filteredProducts.length === 0 && (
+          <div className="col-span-2 py-12 text-center">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
+              <Search size={24} />
             </div>
+            <h3 className="text-slate-600 font-bold">No se encontraron productos</h3>
+            <p className="text-slate-400 text-sm mt-1">Intenta con otra búsqueda o categoría</p>
           </div>
-        ))}
+        )}
       </div>
 
-      {/* Floating Cart Bar */}
+      {/* Floating Cart Bar (Glassmorphism) */}
       {cart.length > 0 && (
-        <div className="fixed bottom-6 left-4 right-4 z-50">
-          <div className="bg-slate-900/95 backdrop-blur-xl text-white p-4 rounded-3xl shadow-2xl flex items-center justify-between border border-white/10">
-            <div className="pl-2">
-              <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Total</p>
-              <p className="text-lg font-black">{formatCurrency(cart.reduce((sum, i) => sum + i.price * i.quantity, 0))}</p>
+        <div className="fixed bottom-6 left-0 right-0 z-50 px-6 animate-in slide-in-from-bottom-5 fade-in duration-500">
+          <div className="bg-slate-900/80 backdrop-blur-2xl text-white p-3 rounded-[2rem] shadow-2xl shadow-indigo-900/20 flex items-center justify-between border border-white/10">
+            <div className="pl-4 flex items-center gap-4">
+              <div className="relative">
+                <ShoppingCart size={24} className="text-indigo-300" />
+                <span className="absolute -top-2 -right-2 bg-rose-500 w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center ring-2 ring-slate-900">
+                  {cart.reduce((sum, i) => sum + i.quantity, 0)}
+                </span>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Total</p>
+                <p className="text-xl font-black tracking-tight">{formatCurrency(cart.reduce((sum, i) => sum + i.price * i.quantity, 0))}</p>
+              </div>
             </div>
             <button 
               onClick={() => setView('order-form')}
-              className="bg-indigo-600 px-6 py-3.5 rounded-2xl font-black flex items-center gap-2 hover:bg-indigo-500 active:scale-95 transition-all text-sm shadow-lg shadow-indigo-600/30"
+              className="bg-indigo-600 px-8 py-4 rounded-3xl font-black tracking-wide flex items-center gap-2 hover:bg-indigo-500 active:scale-95 transition-all text-sm shadow-xl shadow-indigo-600/40"
             >
-              PEDIR <ArrowRight size={16} />
+              COMPRAR <ArrowRight size={18} />
             </button>
           </div>
         </div>

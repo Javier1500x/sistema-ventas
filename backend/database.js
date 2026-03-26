@@ -159,6 +159,18 @@ const initDb = async () => {
     console.error("Error en migración auto_orders:", e.message);
   }
 
+  // Migración: Añadir columna transactionId a auto_orders
+  try {
+    const tableInfo = await query("PRAGMA table_info(auto_orders)");
+    const hasTransactionId = tableInfo.some(c => c.name === 'transactionId');
+    if (!hasTransactionId) {
+      await db.execute("ALTER TABLE auto_orders ADD COLUMN transactionId INTEGER");
+      console.log("Migración exitosa: Columna transactionId añadida a auto_orders.");
+    }
+  } catch (e) {
+    console.error("Error en migración auto_orders (transactionId):", e.message);
+  }
+
   console.log('Base de datos inicializada correctamente.');
 };
 
@@ -288,6 +300,11 @@ const getAllSales = async () => {
 
 const getSaleByTransactionId = async (transactionId) => {
   return query('SELECT * FROM sales_history WHERE transactionId = ?', [transactionId]);
+};
+
+const getNextTransactionId = async () => {
+  const rows = await query('SELECT MAX(transactionId) as maxId FROM sales_history', []);
+  return (rows[0] && rows[0].maxId != null) ? rows[0].maxId + 1 : 1;
 };
 
 const cancelSaleByTransactionId = async (transactionId) => {
@@ -464,9 +481,13 @@ const getPendingAutoOrders = async () => {
   return rows.map(r => ({ ...r, items: JSON.parse(r.items) }));
 };
 
-const updateAutoOrderStatus = async (id, status) => {
-  await run('UPDATE auto_orders SET status = ? WHERE id = ?', [status, id]);
-  return { id, status };
+const updateAutoOrderStatus = async (id, status, transactionId = null) => {
+  if (transactionId !== null) {
+    await run('UPDATE auto_orders SET status = ?, transactionId = ? WHERE id = ?', [status, transactionId, id]);
+  } else {
+    await run('UPDATE auto_orders SET status = ? WHERE id = ?', [status, id]);
+  }
+  return { id, status, transactionId };
 };
 
 module.exports = {
@@ -503,5 +524,6 @@ module.exports = {
   createAutoOrder,
   getAutoOrderById,
   getPendingAutoOrders,
-  updateAutoOrderStatus
+  updateAutoOrderStatus,
+  getNextTransactionId
 };
