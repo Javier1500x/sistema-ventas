@@ -324,7 +324,17 @@ const insertSale = async ({ productId, productName, quantity, price, transaction
 };
 
 const getSaleByPublicId = async (publicId) => {
-  const rows = await query('SELECT * FROM sales_history WHERE public_id = ?', [publicId]);
+  // 1. Intentar buscar directamente en sales_history por public_id (ventas directas)
+  let rows = await query('SELECT * FROM sales_history WHERE public_id = ?', [publicId]);
+  
+  if (rows.length === 0) {
+    // 2. Si no hay nada, buscar si ese publicId pertenece a una auto_order
+    const orderRows = await query('SELECT transactionId FROM auto_orders WHERE public_id = ? OR id = ?', [publicId, publicId]);
+    if (orderRows.length > 0 && orderRows[0].transactionId) {
+      // 3. Si la orden ya tiene un transactionId vinculado, buscar la venta por ese ID
+      rows = await query('SELECT * FROM sales_history WHERE transactionId = ?', [orderRows[0].transactionId]);
+    }
+  }
   return rows;
 };
 
@@ -528,13 +538,24 @@ const getPendingAutoOrders = async () => {
   return rows.map(r => ({ ...r, items: JSON.parse(r.items) }));
 };
 
-const updateAutoOrderStatus = async (id, status, transactionId = null) => {
+const updateAutoOrderStatus = async (idOrPublicId, status, transactionId = null) => {
+  // Determinar si es un ID numérico o un UUID
+  const isNumeric = !isNaN(idOrPublicId) && !String(idOrPublicId).includes('-');
+  const whereClause = isNumeric ? 'WHERE id = ?' : 'WHERE public_id = ?';
+
   if (transactionId !== null) {
-    await run('UPDATE auto_orders SET status = ?, transactionId = ? WHERE id = ?', [status, transactionId, id]);
+    await run(`UPDATE auto_orders SET status = ?, transactionId = ? ${whereClause}`, [status, transactionId, idOrPublicId]);
   } else {
-    await run('UPDATE auto_orders SET status = ? WHERE id = ?', [status, id]);
+    await run(`UPDATE auto_orders SET status = ? ${whereClause}`, [status, idOrPublicId]);
   }
-  return { id, status, transactionId };
+  
+  // Obtener el registro actualizado para devolver el public_id al socket
+  const updatedRows = await query(`SELECT * FROM auto_orders ${whereClause}`, [idOrPublicId]);
+  if (updatedRows.length > 0) {
+    const order = updatedRows[0];
+    return { ...order, items: JSON.parse(order.items) };
+  }
+  return { id: idOrPublicId, status, transactionId };
 };
 
 module.exports = {
