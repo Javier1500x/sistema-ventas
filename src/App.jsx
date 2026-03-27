@@ -3557,4 +3557,3 @@ const SettingsView = ({ timeOffset, notificationPhone, callmebotApiKey, onUpdate
 
 const UsersView = () => <UserManagementView />;
 const CashFlowView = () => <CashFlow />;
-}
