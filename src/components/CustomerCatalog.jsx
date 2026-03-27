@@ -700,13 +700,15 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
                 </div>
                 <button 
                   onClick={() => {
-                    order.items.forEach(item => {
-                      const prod = products.find(p => p.id === item.id);
-                      if (prod && prod.stock >= item.quantity) {
-                        setCart(prev => [...prev, { ...prod, quantity: item.quantity }]);
-                      }
-                    });
-                    setView('order-form');
+                    if (order && order.items) {
+                      order.items.forEach(item => {
+                        const prod = products.find(p => p.id === item.id);
+                        if (prod && prod.stock >= item.quantity) {
+                          setCart(prev => [...prev, { ...prod, quantity: item.quantity }]);
+                        }
+                      });
+                      setView('order-form');
+                    }
                   }}
                   className="mt-2 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-indigo-100 transition-colors"
                 >

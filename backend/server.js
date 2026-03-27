@@ -38,6 +38,7 @@ const {
   markSalesAsClosed,
   getSetting,
   updateSetting,
+  createAutoOrder,
   getAutoOrderById,
   getAutoOrderByPublicId,
   getSaleByPublicId,
