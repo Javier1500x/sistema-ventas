@@ -1158,6 +1158,8 @@ export default function App() {
                 onDownloadPDF={handleDownloadPDF}
                 onPreviewPDF={handlePreviewPDF}
                 user={user}
+                stockAlertData={stockAlertData}
+                setStockAlertData={setStockAlertData}
               />
             )}
             {view === 'pos' && (user.role === 'admin' || user.role === 'seller') && <POSView
@@ -1771,7 +1773,7 @@ const PDFPreviewModal = ({ url, isOpen, onClose }) => {
   );
 };
 
-const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPreviewPDF, user }) => {
+const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPreviewPDF, user, stockAlertData, setStockAlertData }) => {
   const [chartData, setChartData] = useState({ salesTrend: [], salesByCategory: [] });
   const [isLoading, setIsLoading] = useState(true);
 
