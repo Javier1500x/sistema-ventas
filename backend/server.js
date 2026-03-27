@@ -660,11 +660,15 @@ app.put('/api/auto-orders/:id/status', authenticateToken, async (req, res) => {
   try {
     const { status, transactionId } = req.body;
     const result = await updateAutoOrderStatus(req.params.id, status, transactionId);
-    
-    // Notificar al cliente vía Socket
+
+    // Notificar al cliente usando su ID público (UUID)
+    if (result && result.public_id) {
+      io.emit(`orderStatusUpdate:${result.public_id}`, { status, transactionId });
+    }
+
+    // También emitir al canal original por si acaso el cliente usa ID numérico
     io.emit(`orderStatusUpdate:${req.params.id}`, { status, transactionId });
     io.emit('orderUpdate', result); // Para la vista de admin
-
     res.json({ message: 'Estado actualizado correctamente', ...result });
   } catch (error) {
     res.status(500).json({ message: 'Error al actualizar estado del pedido' });
