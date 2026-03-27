@@ -117,7 +117,79 @@ const getSalesChartData = async () => {
   }
 };
 
+const getComboSuggestions = async (productId) => {
+  try {
+    const sales = await getAllSales();
+    
+    // Agrupar ventas por transactionId para encontrar productos comprados juntos
+    const bundles = new Map();
+    sales.forEach(s => {
+      if (!s.transactionId) return;
+      if (!bundles.has(s.transactionId)) bundles.set(s.transactionId, []);
+      bundles.get(s.transactionId).push(String(s.productId));
+    });
+
+    const companionCounts = new Map();
+    bundles.forEach(items => {
+      if (items.includes(String(productId))) {
+        items.forEach(item => {
+          if (item !== String(productId)) {
+            companionCounts.set(item, (companionCounts.get(item) || 0) + 1);
+          }
+        });
+      }
+    });
+
+    // Ordenar por frecuencia
+    const sorted = Array.from(companionCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3); // Top 3 sugerencias
+
+    const products = await getAllProducts();
+    return sorted.map(([id]) => products.find(p => String(p.id) === id)).filter(Boolean);
+  } catch (error) {
+    console.error('Error in getComboSuggestions:', error);
+    return [];
+  }
+};
+
+const getStockPredictor = async () => {
+  try {
+    const sales = await getAllSales();
+    const products = await getAllProducts();
+    const today = await getAdjustedDateString();
+
+    const alerts = [];
+    products.forEach(product => {
+      // Ventas de este producto hoy
+      const todaySales = sales.filter(s => 
+        String(s.productId) === String(product.id) && 
+        s.date.startsWith(today)
+      ).reduce((sum, s) => sum + s.quantity, 0);
+
+      const stock = product.stock;
+      if (stock > 0 && todaySales > stock * 0.5) {
+        alerts.push({
+          productId: product.id,
+          name: product.name,
+          currentStock: stock,
+          todaySales,
+          probability: 'ALTA',
+          message: `Riesgo de agotamiento: Se ha vendido el ${Math.round((todaySales/(todaySales+stock))*100)}% del stock disponible hoy.`
+        });
+      }
+    });
+
+    return alerts;
+  } catch (error) {
+    console.error('Error in getStockPredictor:', error);
+    return [];
+  }
+};
+
 module.exports = {
   getDailySummary,
-  getSalesChartData
+  getSalesChartData,
+  getComboSuggestions,
+  getStockPredictor
 };

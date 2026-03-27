@@ -1,5 +1,6 @@
 const { createClient } = require('@libsql/client');
 const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 // Conexión a Turso (cloud) o SQLite local si no hay variables de entorno
@@ -155,9 +156,36 @@ const initDb = async () => {
       await db.execute("ALTER TABLE auto_orders ADD COLUMN payWith REAL");
       console.log("Migración exitosa: Columnas note y payWith añadidas a auto_orders.");
     }
+    const hasPublicId = tableInfo.some(c => c.name === 'public_id');
+    if (!hasPublicId) {
+      await db.execute("ALTER TABLE auto_orders ADD COLUMN public_id TEXT");
+      console.log("Migración exitosa: Columna public_id añadida a auto_orders.");
+    }
   } catch (e) {
     console.error("Error en migración auto_orders:", e.message);
   }
+
+  // Migración: Añadir public_id a sales_history
+  try {
+    const tableInfo = await query("PRAGMA table_info(sales_history)");
+    const hasPublicId = tableInfo.some(c => c.name === 'public_id');
+    if (!hasPublicId) {
+      await db.execute("ALTER TABLE sales_history ADD COLUMN public_id TEXT");
+      console.log("Migración exitosa: Columna public_id añadida a sales_history.");
+    }
+  } catch (e) {
+    console.error("Error en migración sales_history:", e.message);
+  }
+
+  // Insertar nuevas configuraciones por defecto
+  await db.execute({
+    sql: "INSERT OR IGNORE INTO settings (key, value) VALUES ('estimated_prep_time', '10-15')",
+    args: []
+  });
+  await db.execute({
+    sql: "INSERT OR IGNORE INTO settings (key, value) VALUES ('shop_open', 'true')",
+    args: []
+  });
 
   // Migración: Añadir columna transactionId a auto_orders
   try {
@@ -282,11 +310,22 @@ const updateProductStock = async (productId, stockChange) => {
 
 // --- Ventas ---
 const insertSale = async ({ productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount, date }) => {
+  let finalTransactionId = transactionId;
+  const publicId = uuidv4();
+  if (finalTransactionId === null || finalTransactionId === undefined) {
+    const nextProv = await getNextTransactionId();
+    finalTransactionId = nextProv;
+  }
   const result = await run(
-    'INSERT INTO sales_history (productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount, date, is_closed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)',
-    [productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount, date]
+    'INSERT INTO sales_history (productId, productName, quantity, price, transactionId, paymentMethod, receivedAmount, changeAmount, date, is_closed, public_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)',
+    [productId, productName, quantity, price, finalTransactionId, paymentMethod, receivedAmount, changeAmount, date, publicId]
   );
-  return { id: Number(result.lastInsertRowid) };
+  return { id: Number(result.lastInsertRowid), transactionId: finalTransactionId, publicId };
+};
+
+const getSaleByPublicId = async (publicId) => {
+  const rows = await query('SELECT * FROM sales_history WHERE public_id = ?', [publicId]);
+  return rows;
 };
 
 const markSalesAsClosed = async (datePrefix) => {
@@ -456,17 +495,25 @@ const updateSetting = async (key, value) => {
 // --- Auto Órdenes (QR/Cliente) ---
 const createAutoOrder = async ({ items, total, customerName, note, payWith, date }) => {
   try {
+    const publicId = uuidv4();
     console.log('Intentando crear auto_order:', { customerName, total, itemsCount: items?.length });
     const result = await run(
-      'INSERT INTO auto_orders (items, total, customerName, note, payWith, status, date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [JSON.stringify(items), total, customerName, note, payWith, 'pending', date]
+      'INSERT INTO auto_orders (items, total, customerName, note, payWith, status, date, public_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [JSON.stringify(items), total, customerName, note, payWith, 'pending', date, publicId]
     );
     console.log('Auto_order creada con éxito ID:', result.lastInsertRowid);
-    return { id: Number(result.lastInsertRowid) };
+    return { id: Number(result.lastInsertRowid), publicId };
   } catch (error) {
     console.error('DATABASE ERROR in createAutoOrder:', error);
     throw error;
   }
+};
+
+const getAutoOrderByPublicId = async (publicId) => {
+  const rows = await query('SELECT * FROM auto_orders WHERE public_id = ? OR id = ?', [publicId, publicId]);
+  if (rows.length === 0) return null;
+  const order = rows[0];
+  return { ...order, items: JSON.parse(order.items) };
 };
 
 const getAutoOrderById = async (id) => {
@@ -523,6 +570,8 @@ module.exports = {
   updateSetting,
   createAutoOrder,
   getAutoOrderById,
+  getAutoOrderByPublicId,
+  getSaleByPublicId,
   getPendingAutoOrders,
   updateAutoOrderStatus,
   getNextTransactionId

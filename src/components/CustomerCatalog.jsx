@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck, QrCode, Search, SlidersHorizontal, ChevronDown, Minus, Plus, Trash2, History, Send, Printer } from 'lucide-react';
+import { ShoppingCart, CheckCircle, Clock, ArrowRight, Package, X, Star, ScanLine, ShieldCheck, QrCode, Search, SlidersHorizontal, ChevronDown, Minus, Plus, Trash2, History, Send, Printer, Heart, Mic } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { io } from 'socket.io-client';
 import logoImage from '/Gemini_Generated_Image_tlsnlhtlsnlhtlsn.png?url';
 
 const storeInfo = {
@@ -34,14 +34,21 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
   const [customerNote, setCustomerNote] = useState('');
   const [payWith, setPayWith] = useState('');
   const [pastOrders, setPastOrders] = useState([]);
+  const [favorites, setFavorites] = useState([]);
+  const [isShopOpen, setIsShopOpen] = useState(true);
+  const [estimatedPrepTime, setEstimatedPrepTime] = useState("");
+  const [recommendations, setRecommendations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isListening, setIsListening] = useState(false);
 
   useEffect(() => {
     fetch(`${apiBaseUrl}/api/public/products`)
       .then(res => res.json())
       .then(data => {
-        if (Array.isArray(data)) {
-          setProducts(data);
+        if (data.products && Array.isArray(data.products)) {
+          setProducts(data.products);
+          setIsShopOpen(data.isShopOpen);
+          setEstimatedPrepTime(data.estimatedPrepTime);
         } else {
           console.error('Invalid products data:', data);
           setProducts([]);
@@ -54,12 +61,14 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
         setIsLoading(false);
       });
 
-    // Cargar historial local
+    // Cargar favoritos y historial local
     try {
-      const saved = localStorage.getItem('customer_past_orders');
-      if (saved) setPastOrders(JSON.parse(saved));
+      const savedFavs = localStorage.getItem('customer_favorites');
+      if (savedFavs) setFavorites(JSON.parse(savedFavs));
+      const savedOrders = localStorage.getItem('customer_past_orders');
+      if (savedOrders) setPastOrders(JSON.parse(savedOrders));
     } catch (e) {
-      console.error('Error loading past orders:', e);
+      console.error('Error loading local data:', e);
     }
 
     // Parse statusId from URL if present
@@ -106,23 +115,82 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
     }
   }, [view, orderId, apiBaseUrl]);
 
-  // Polling for order status
+  // Socket.io para actualizaciones en tiempo real
   useEffect(() => {
+    const socket = io(apiBaseUrl);
+    
+    socket.on('connect', () => console.log('WebSocket conectado al catálogo'));
+    
+    // Escuchar si la tienda se abre o cierra
+    socket.on('shopStatusUpdate', (data) => {
+      console.log('Cambio de estado de tienda:', data);
+      setIsShopOpen(data.isShopOpen);
+    });
+
+    // Escuchar cambios en tiempo de preparación
+    socket.on('prepTimeUpdate', (data) => {
+      setEstimatedPrepTime(data.estimatedPrepTime);
+    });
+
     if (orderId && view === 'order-status') {
-      const interval = setInterval(() => {
-        fetch(`${apiBaseUrl}/api/auto-orders/${orderId}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.status) {
-              setOrderStatus(data.status);
-              setOrderData(data);
-            }
-          })
-          .catch(err => console.error('Error polling status:', err));
-      }, 4000);
-      return () => clearInterval(interval);
+      socket.on(`orderStatusUpdate:${orderId}`, (data) => {
+        console.log('Update recibido vía Socket:', data);
+        setOrderStatus(data.status);
+        if (data.transactionId) {
+          setOrderData(prev => ({ ...prev, transactionId: data.transactionId }));
+        }
+      });
     }
-  }, [orderId, view, apiBaseUrl]);
+
+    return () => socket.disconnect();
+  }, [apiBaseUrl, orderId, view]);
+
+  // AI Suggestions
+  useEffect(() => {
+    if (cart.length > 0) {
+      const lastItem = cart[cart.length - 1];
+      fetch(`${apiBaseUrl}/api/ai/combos/${lastItem.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            // Filtrar productos que ya están en el carrito
+            const filtered = data.filter(p => !cart.some(c => c.id === p.id));
+            setRecommendations(filtered);
+          }
+        });
+    } else {
+      setRecommendations([]);
+    }
+  }, [cart, apiBaseUrl]);
+
+  // Voice Search
+  const handleVoiceSearch = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Tu navegador no soporta búsqueda por voz.");
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-ES';
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setSearchQuery(transcript);
+      setIsListening(false);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    recognition.start();
+  };
+  const toggleFavorite = (productId) => {
+    setFavorites(prev => {
+      const newFavs = prev.includes(productId) ? prev.filter(id => id !== productId) : [...prev, productId];
+      localStorage.setItem('customer_favorites', JSON.stringify(newFavs));
+      return newFavs;
+    });
+  };
 
   const addToCart = (product) => {
     if (product.stock <= 0) return; // Validación estricta
@@ -167,13 +235,13 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
       const data = await response.json();
       
       if (response.ok) {
-        setOrderId(data.id);
+        setOrderId(data.id); // Este es el publicId ahora
         setOrderStatus('pending');
         setOrderData({ items: orderItems, total: orderTotal, customerName: customerName.trim() || 'Cliente' });
         setView('order-status');
         
-        // Guardar en historial local
-        const newPast = [{ id: data.id, date: new Date().toISOString(), total: orderTotal }, ...pastOrders].slice(0, 10);
+        // Guardar en historial local para "Comprar de nuevo"
+        const newPast = [{ id: data.id, date: new Date().toISOString(), total: orderTotal, items: orderItems }, ...pastOrders].slice(0, 5);
         setPastOrders(newPast);
         localStorage.setItem('customer_past_orders', JSON.stringify(newPast));
       } else {
@@ -415,7 +483,7 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Comprobante Digital</p>
               <div className="bg-white p-2 rounded-2xl inline-block shadow-md border border-slate-200 mx-auto">
                 <QRCodeSVG 
-                  value={`${window.location.origin}${window.location.pathname}#receipt?id=${orderData.transactionId || orderId}`} 
+                  value={`${window.location.origin}${window.location.pathname}#receipt?id=${orderId}`} 
                   size={180} 
                   level="H" 
                   includeMargin={true}
@@ -427,7 +495,7 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
                 <p className="text-[10px] font-bold text-slate-300 uppercase mb-2">Detalle</p>
                 {Array.isArray(orderData.items) && orderData.items.map((item, idx) => (
                   <div key={idx} className="flex justify-between text-sm py-1 border-b border-slate-50 last:border-0">
-                    <span className="text-slate-600 font-medium">{item.name} <span className="text-slate-400">x{item.quantity}</span></span>
+                    <span className="text-slate-600 font-medium">{item.productName || item.name} <span className="text-slate-400">x{item.quantity}</span></span>
                     <span className="text-slate-800 font-bold">{formatCurrency(item.price * item.quantity)}</span>
                   </div>
                 ))}
@@ -607,12 +675,69 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
               Bienvenido 👋
             </span>
             <h2 className="text-3xl font-black leading-tight drop-shadow-md">
-              Lo mejor, <br/> sin hacer fila.
+              {isShopOpen ? 'Lo mejor, \n sin hacer fila.' : 'Tienda \n Cerrada'}
             </h2>
-            <p className="text-indigo-100 mt-2 text-sm font-medium opacity-90">Selecciona, ordena y recoge.</p>
+            <p className="text-indigo-100 mt-2 text-sm font-medium opacity-90">
+              {isShopOpen ? (estimatedPrepTime ? `Espera estimada: ${estimatedPrepTime} min` : 'Selecciona, ordena y recoge.') : 'Estamos descansando. ¡Vuelve pronto!'}
+            </p>
           </div>
         </div>
       </div>
+
+      {/* Buy Again (Personalized) */}
+      {isShopOpen && pastOrders.length > 0 && searchQuery === '' && selectedCategory === 'Todos' && (
+        <div className="px-6 mb-8">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+            <History size={14} className="text-indigo-500" /> Comprar de nuevo
+          </h3>
+          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
+            {pastOrders.slice(0, 3).map((order, idx) => (
+              <div key={idx} className="bg-white p-4 rounded-3xl min-w-[200px] border border-slate-100 shadow-sm flex flex-col gap-2">
+                <p className="text-[10px] text-slate-400 font-bold">{new Date(order.date).toLocaleDateString()}</p>
+                <div className="text-xs font-bold text-slate-700 truncate">
+                  {order.items?.map(i => i.name).join(', ')}
+                </div>
+                <button 
+                  onClick={() => {
+                    order.items.forEach(item => {
+                      const prod = products.find(p => p.id === item.id);
+                      if (prod && prod.stock >= item.quantity) {
+                        setCart(prev => [...prev, { ...prod, quantity: item.quantity }]);
+                      }
+                    });
+                    setView('order-form');
+                  }}
+                  className="mt-2 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-indigo-100 transition-colors"
+                >
+                  Repetir pedido
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Favorites */}
+      {isShopOpen && favorites.length > 0 && searchQuery === '' && selectedCategory === 'Todos' && (
+        <div className="px-6 mb-8">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+            <Heart size={14} className="text-rose-500 fill-rose-500" /> Tus favoritos
+          </h3>
+          <div className="grid grid-cols-2 gap-4">
+            {products.filter(p => favorites.includes(p.id)).slice(0, 2).map(product => (
+              <div key={product.id} className="bg-white p-3 rounded-3xl border border-slate-100 flex items-center gap-3">
+                 <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center overflow-hidden">
+                    {product.image ? <img src={product.image} className="w-full h-full object-cover" /> : <Package size={16} className="text-slate-300" />}
+                 </div>
+                 <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-800 truncate">{product.name}</p>
+                    <button onClick={() => addToCart(product)} className="text-[10px] font-black text-indigo-600 uppercase">Añadir</button>
+                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Search & Categories */}
       <div className="px-6 space-y-4">
@@ -626,8 +751,14 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
             placeholder="¿Qué estás buscando hoy?" 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-4 py-4 bg-white rounded-2xl shadow-sm border border-slate-100 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 focus:outline-none transition-all text-slate-700 font-medium"
+            className="w-full pl-12 pr-12 py-4 bg-white rounded-2xl shadow-sm border border-slate-100 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100 focus:outline-none transition-all text-slate-700 font-medium"
           />
+          <button 
+            onClick={handleVoiceSearch}
+            className={`absolute inset-y-2 right-2 px-3 rounded-xl flex items-center justify-center transition-all ${isListening ? 'bg-rose-500 text-white animate-pulse' : 'bg-indigo-50 text-indigo-400 hover:text-indigo-600'}`}
+          >
+            <Mic size={20} />
+          </button>
         </div>
 
         {/* Categories Carousel */}
@@ -714,22 +845,30 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
               </div>
               <div className="px-3 pb-3 flex flex-col flex-1">
                 <h3 className="font-bold text-slate-800 text-sm leading-tight mb-2 line-clamp-2 min-h-[40px]">{product.name}</h3>
-                <div className="mt-auto flex items-end justify-between">
+              <div className="mt-auto flex items-end justify-between">
                   <div className="flex flex-col">
                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">{product.category || 'Varios'}</span>
                     <span className="text-indigo-600 font-black text-lg">{formatCurrency(product.price)}</span>
                   </div>
-                  <button 
-                    onClick={() => !isOutOfStock && addToCart(product)}
-                    disabled={isOutOfStock}
-                    className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-light transition-all ${
-                      isOutOfStock 
-                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                        : 'bg-slate-900 text-white hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-300 active:scale-90 active:bg-indigo-700'
-                    }`}
-                  >
-                    +
-                  </button>
+                  <div className="flex flex-col items-end gap-2">
+                    <button 
+                      onClick={() => toggleFavorite(product.id)}
+                      className={`p-2 rounded-full transition-all ${favorites.includes(product.id) ? 'text-rose-500 scale-110' : 'text-slate-300 hover:text-rose-300'}`}
+                    >
+                      <Heart size={18} fill={favorites.includes(product.id) ? "currentColor" : "none"} />
+                    </button>
+                    <button 
+                      onClick={() => !isOutOfStock && isShopOpen && addToCart(product)}
+                      disabled={isOutOfStock || !isShopOpen}
+                      className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-light transition-all ${
+                        (isOutOfStock || !isShopOpen)
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                          : 'bg-slate-900 text-white hover:bg-indigo-600 hover:shadow-lg hover:shadow-indigo-300 active:scale-90 active:bg-indigo-700'
+                      }`}
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -791,6 +930,7 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
               <div className="flex gap-2">
                 <button 
                   onClick={() => {
+                    if (!isShopOpen) return;
                     setCart(prev => {
                       const existing = prev.find(item => item.id === quickViewProduct.id);
                       if (existing) {
@@ -801,12 +941,13 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
                     });
                     setQuickViewProduct(null);
                   }}
-                  className="flex-1 py-4 bg-slate-900 text-white rounded-2xl font-black tracking-wide flex items-center justify-center gap-2 hover:bg-indigo-600 transition-colors shadow-lg active:scale-95"
+                  disabled={!isShopOpen}
+                  className={`flex-1 py-4 rounded-2xl text-white font-bold shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 ${!isShopOpen ? 'bg-slate-300 cursor-not-allowed' : 'bg-slate-900 hover:bg-indigo-600 shadow-indigo-200'}`}
                 >
-                  <Plus size={18} /> {cart.find(i => i.id === quickViewProduct.id) ? 'ACTUALIZAR' : 'AÑADIR'}
+                  <Plus size={18} /> {isShopOpen ? (cart.find(i => i.id === quickViewProduct.id) ? 'ACTUALIZAR' : 'AÑADIR') : 'TIENDA CERRADA'}
                 </button>
                 
-                {cart.find(i => i.id === quickViewProduct.id) && (
+                {cart.find(i => i.id === quickViewProduct.id) && isShopOpen && (
                   <button 
                     onClick={() => {
                       removeFromCart(quickViewProduct.id);
@@ -818,6 +959,26 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
                   </button>
                 )}
               </div>
+
+              {/* Recommendations (AI) */}
+              {isShopOpen && recommendations.length > 0 && (
+                <div className="mt-8 pt-6 border-t border-slate-100">
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Otros también compraron</p>
+                   <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                      {recommendations.map(rec => (
+                        <div key={rec.id} className="min-w-[120px] bg-slate-50 p-2 rounded-2xl border border-slate-100 flex flex-col gap-1 cursor-pointer hover:bg-white transition-colors group" onClick={() => addToCart(rec)}>
+                           <div className="w-8 h-8 rounded-lg overflow-hidden mb-1">
+                              {rec.image ? <img src={rec.image} className="w-full h-full object-cover" /> : <Package size={12} className="text-slate-200" />}
+                           </div>
+                           <p className="text-[9px] font-bold text-slate-700 truncate">{rec.name}</p>
+                           <button className="text-[8px] font-black text-indigo-600 uppercase mt-1 self-start group-hover:text-indigo-800">
+                            + Añadir
+                           </button>
+                        </div>
+                      ))}
+                   </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

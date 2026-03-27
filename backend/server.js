@@ -4,6 +4,9 @@ const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
 const axios = require('axios');
+const http = require('http');
+const { Server } = require('socket.io');
+const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs'); // Usar bcryptjs para evitar errores de módulos nativos en Electron
 const {
   initDb,
@@ -35,19 +38,41 @@ const {
   markSalesAsClosed,
   getSetting,
   updateSetting,
-  createAutoOrder,
   getAutoOrderById,
+  getAutoOrderByPublicId,
+  getSaleByPublicId,
   getPendingAutoOrders,
   updateAutoOrderStatus,
-  getNextTransactionId
+  getNextTransactionId,
+  getAllProducts
 } = require('./database');
-const { getDailySummary, getSalesChartData } = require('./decisionEngine');
+const { getDailySummary, getSalesChartData, getComboSuggestions, getStockPredictor } = require('./decisionEngine');
 const { sendWhatsAppMessage, sendLowStockAlert } = require('./notificationService');
 const cron = require('node-cron');
 const { generateDailyReportText, generateDailyReportPDF } = require('./reportService');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 const PORT = process.env.PORT || 3001;
+
+// Rate limiting para seguridad
+const publicLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 100, // Límite de 100 peticiones por IP por ventana
+  message: { message: 'Demasiadas peticiones desde esta IP, por favor intente más tarde.' }
+});
+
+const orderLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutos
+  max: 5, // Solo 5 pedidos por cada 10 minutos por IP
+  message: { message: 'Límite de pedidos alcanzado. Por favor, espere unos minutos.' }
+});
 
 app.use(express.json());
 app.use(cors({
@@ -289,7 +314,7 @@ app.post('/api/record-sale', async (req, res) => {
       console.error('Failed to process low stock notification:', notifyError);
     }
 
-    res.status(201).json({ message: 'Venta registrada con éxito', saleId: result.id });
+    res.status(201).json({ message: 'Venta registrada con éxito', saleId: result.id, transactionId: result.transactionId });
   } catch (error) {
     res.status(500).json({ message: 'Error en el servidor al registrar la venta', error });
   }
@@ -430,10 +455,14 @@ app.get('/api/settings', async (req, res) => {
     const time_offset = await getSetting('time_offset');
     const notification_phone = await getSetting('notification_phone');
     const callmebot_apikey = await getSetting('callmebot_apikey');
+    const shop_open = await getSetting('shop_open');
+    const estimated_prep_time = await getSetting('estimated_prep_time');
     res.json({
       time_offset: time_offset || "-6",
       notification_phone: notification_phone || '',
-      callmebot_apikey: callmebot_apikey || ''
+      callmebot_apikey: callmebot_apikey || '',
+      shop_open: shop_open || 'true',
+      estimated_prep_time: estimated_prep_time || '10-15'
     });
   } catch (error) {
     res.status(500).json({ message: 'Error al obtener configuraciones' });
@@ -442,13 +471,21 @@ app.get('/api/settings', async (req, res) => {
 
 app.post('/api/settings', async (req, res) => {
   try {
-    const { time_offset, notification_phone, callmebot_apikey } = req.body;
+    const { time_offset, notification_phone, callmebot_apikey, shop_open, estimated_prep_time } = req.body;
     if (time_offset !== undefined) {
       await updateSetting('time_offset', time_offset);
       currentOffset = parseFloat(time_offset);
     }
     if (notification_phone !== undefined) await updateSetting('notification_phone', notification_phone);
     if (callmebot_apikey !== undefined) await updateSetting('callmebot_apikey', callmebot_apikey);
+    if (shop_open !== undefined) {
+      await updateSetting('shop_open', shop_open);
+      io.emit('shopStatusUpdate', { isShopOpen: shop_open === 'true' });
+    }
+    if (estimated_prep_time !== undefined) {
+      await updateSetting('estimated_prep_time', estimated_prep_time);
+      io.emit('prepTimeUpdate', { estimatedPrepTime: estimated_prep_time });
+    }
     res.json({ message: 'Configuración actualizada' });
   } catch (error) {
     res.status(500).json({ message: 'Error al actualizar configuraciones' });
@@ -484,10 +521,12 @@ app.get('/api/dashboard-charts', async (req, res) => {
 });
 
 // --- Endpoints para Auto-Órdenes (Mostrador Digital) ---
-app.get('/api/public/products', async (req, res) => {
+app.get('/api/public/products', publicLimiter, async (req, res) => {
   try {
     const products = await getAllProducts();
-    // Enviamos el catálogo público, incluyendo los que no tienen stock para poder mostrarlos como agotados
+    const isShopOpen = await getSetting('shop_open') === 'true';
+    const estimatedPrepTime = await getSetting('estimated_prep_time') || "10-15";
+
     const publicProducts = products
       .map(p => ({
         id: p.id,
@@ -497,35 +536,51 @@ app.get('/api/public/products', async (req, res) => {
         category: p.category,
         stock: p.stock
       }));
-    res.json(publicProducts);
+    res.json({ products: publicProducts, isShopOpen, estimatedPrepTime });
   } catch (error) {
     res.status(500).json({ message: 'Error al obtener catálogo público' });
   }
 });
 
-app.post('/api/auto-orders', async (req, res) => {
+app.post('/api/auto-orders', orderLimiter, async (req, res) => {
   try {
-    const { items, total, customerName, note, payWith } = req.body;
-    console.log('API POST /api/auto-orders received:', { customerName, itemsCount: items?.length });
+    const { items, customerName, note, payWith } = req.body;
     
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: 'El carrito está vacío o es inválido' });
     }
 
-    // Validación de stock
+    const isShopOpen = await getSetting('shop_open') === 'true';
+    if (!isShopOpen) {
+      return res.status(503).json({ message: 'La tienda está cerrada temporalmente. No se aceptan auto-pedidos.' });
+    }
+
+    // Validación de stock y PRECIOS REALES (Seguridad)
     const allProducts = await getAllProducts();
+    let recalculatedTotal = 0;
+    const validatedItems = [];
+
     for (const item of items) {
       const dbProduct = allProducts.find(p => String(p.id) === String(item.id));
-      if (!dbProduct || dbProduct.stock < item.quantity) {
-        return res.status(400).json({ message: `El producto "${item.name}" no tiene stock suficiente. Disponible: ${dbProduct ? dbProduct.stock : 0}.` });
+      if (!dbProduct) return res.status(400).json({ message: `Producto no encontrado: ${item.name}` });
+      if (dbProduct.stock < item.quantity) {
+        return res.status(400).json({ message: `El producto "${item.name}" no tiene stock suficiente. Disponible: ${dbProduct.stock}.` });
       }
+      
+      // Usar precio de la DB, no del frontend
+      recalculatedTotal += dbProduct.price * item.quantity;
+      validatedItems.push({
+        id: dbProduct.id,
+        name: dbProduct.name,
+        price: dbProduct.price,
+        quantity: item.quantity
+      });
     }
 
     const date = getUTCDateISO();
-    // Asegurar valores por defecto para evitar problemas con la DB
     const orderData = {
-      items,
-      total: parseFloat(total) || 0,
+      items: validatedItems,
+      total: recalculatedTotal,
       customerName: customerName || 'Cliente',
       note: note || '',
       payWith: payWith ? parseFloat(payWith) : null,
@@ -533,16 +588,20 @@ app.post('/api/auto-orders', async (req, res) => {
     };
 
     const result = await createAutoOrder(orderData);
-    res.status(201).json({ id: result.id, message: 'Pedido enviado con éxito' });
+    
+    // Notificar al admin vía Socket
+    io.emit('newOrder', { id: result.id, publicId: result.publicId, ...orderData });
+
+    res.status(201).json({ id: result.publicId, message: 'Pedido enviado con éxito' });
   } catch (error) {
     console.error('ERROR CRÍTICO AL ENVIAR PEDIDO:', error);
     res.status(500).json({ message: 'Error interno al enviar pedido', detail: error.message });
   }
 });
 
-app.get('/api/auto-orders/:id', async (req, res) => {
+app.get('/api/auto-orders/:id', publicLimiter, async (req, res) => {
   try {
-    const order = await getAutoOrderById(req.params.id);
+    const order = await getAutoOrderByPublicId(req.params.id);
     if (!order) return res.status(404).json({ message: 'Pedido no encontrado' });
     res.json(order);
   } catch (error) {
@@ -551,18 +610,36 @@ app.get('/api/auto-orders/:id', async (req, res) => {
 });
 
 // Endpoint público para ver el recibo generado a partir de una venta
-app.get('/api/public/receipts/:id', async (req, res) => {
+app.get('/api/public/receipts/:id', publicLimiter, async (req, res) => {
   try {
-    const sales = await getSaleByTransactionId(req.params.id);
+    // Intentar buscar por public_id primero
+    const sales = await getSaleByPublicId(req.params.id);
+    
     if (!sales || sales.length === 0) {
-      return res.status(404).json({ error: 'Recibo no encontrado' });
+      // Fallback a ID secuencial por compatibilidad temporal (Opcional, se puede quitar después)
+      const oldSales = await getSaleByTransactionId(req.params.id);
+      if (!oldSales || oldSales.length === 0) {
+        return res.status(404).json({ error: 'Recibo no encontrado' });
+      }
+      const receiptData = {
+        id: req.params.id,
+        items: oldSales.map(s => ({ name: s.productName, quantity: s.quantity, price: s.price })),
+        total: oldSales.reduce((sum, s) => sum + (s.price * s.quantity), 0),
+        date: oldSales[0].date,
+        paymentMethod: oldSales[0].paymentMethod,
+        seller: oldSales[0].seller || 'Sistema'
+      };
+      return res.json(receiptData);
     }
+
     const receiptData = {
-      id: req.params.id,
+      id: sales[0].transactionId,
+      publicId: req.params.id,
       items: sales.map(s => ({ name: s.productName, quantity: s.quantity, price: s.price })),
       total: sales.reduce((sum, s) => sum + (s.price * s.quantity), 0),
       date: sales[0].date,
-      paymentMethod: sales[0].paymentMethod
+      paymentMethod: sales[0].paymentMethod,
+      seller: sales[0].seller || 'Sistema'
     };
     res.json(receiptData);
   } catch (error) {
@@ -582,10 +659,33 @@ app.get('/api/pending-auto-orders', authenticateToken, async (req, res) => {
 app.put('/api/auto-orders/:id/status', authenticateToken, async (req, res) => {
   try {
     const { status, transactionId } = req.body;
-    await updateAutoOrderStatus(req.params.id, status, transactionId);
-    res.json({ message: 'Estado actualizado' });
+    const result = await updateAutoOrderStatus(req.params.id, status, transactionId);
+    
+    // Notificar al cliente vía Socket
+    io.emit(`orderStatusUpdate:${req.params.id}`, { status, transactionId });
+    io.emit('orderUpdate', result); // Para la vista de admin
+
+    res.json({ message: 'Estado actualizado correctamente', ...result });
   } catch (error) {
-    res.status(500).json({ message: 'Error al actualizar estado' });
+    res.status(500).json({ message: 'Error al actualizar estado del pedido' });
+  }
+});
+
+app.get('/api/ai/combos/:productId', publicLimiter, async (req, res) => {
+  try {
+    const combos = await getComboSuggestions(req.params.productId);
+    res.json(combos);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener sugerencias.' });
+  }
+});
+
+app.get('/api/ai/stock-alerts', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    const alerts = await getStockPredictor();
+    res.json(alerts);
+  } catch (error) {
+    res.status(500).json({ message: 'Error al obtener predicciones de stock.' });
   }
 });
 
@@ -714,8 +814,8 @@ app.use((err, req, res, next) => {
 
   // Esperar a que la BD se inicialice antes de escuchar peticiones
   initPromise.then(() => {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Servidor de ventas corriendo en http://localhost:${PORT}`);
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`Servidor de ventas con Socket.io corriendo en http://localhost:${PORT}`);
     });
   }).catch(err => {
     console.error('Error al iniciar el servidor:', err);

@@ -56,6 +56,7 @@ import logoImage from '/Gemini_Generated_Image_tlsnlhtlsnlhtlsn.png?url'; // Imp
 import BarcodeScanner from './components/BarcodeScanner.jsx';
 import { QRCodeCanvas } from 'qrcode.react';
 import CustomerCatalog from './components/CustomerCatalog.jsx';
+import { io } from 'socket.io-client';
 
 // --- MOCK DATA & UTILS ---
 // En un entorno real, esto se reemplaza por llamadas a la API (fetch/axios).
@@ -222,7 +223,6 @@ export default function App() {
   const [products, setProducts] = usePersistentState('products', INITIAL_PRODUCTS);
   const [sales, setSales] = usePersistentState('sales', []);
   const [cart, setCart] = useState([]);
-  const [invoiceNumber, setInvoiceNumber] = usePersistentState('invoiceNumber', 1);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [bellNotifications, setBellNotifications] = useState([]);
   const [isBellOpen, setIsBellOpen] = useState(false);
@@ -248,6 +248,9 @@ export default function App() {
   const [timeOffset, setTimeOffset] = useState(-6);
   const [notificationPhone, setNotificationPhone] = useState('');
   const [callmebotApiKey, setCallmebotApiKey] = useState('');
+  const [isShopOpen, setIsShopOpen] = useState(true);
+  const [estimatedPrepTime, setEstimatedPrepTime] = useState('10-15');
+  const [stockAlertData, setStockAlertData] = useState([]);
 
   // Estado para notificaciones temporales
   const [notification, setNotification] = useState(null);
@@ -270,27 +273,22 @@ export default function App() {
       const response = await fetch(`${API_BASE_URL}/api/products`, {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.token}`, // Asumiendo que user.token está disponible
-          'x-user-role': user.role // Asumiendo que user.role está disponible
+          'Authorization': `Bearer ${user.token}`,
+          'x-user-role': user.role
         },
       });
       if (response.ok) {
         const data = await response.json();
         setProducts(data);
-      } else {
-        const errorData = await response.json();
-        console.error('Error al cargar productos:', errorData.message);
-        showNotification(`Error al cargar productos: ${errorData.message}`, 'error');
       }
     } catch (error) {
       console.error('Error de conexión al cargar productos:', error);
-      showNotification('Error de conexión al cargar productos.', 'error');
     }
-  }, [user, showNotification]); // Dependencias de user y showNotification
+  }, [user]);
 
   // --- Cargar historial de ventas desde el backend ---
   const fetchSales = useCallback(async () => {
-    if (!user) return;
+    if (!user || !user.token) return;
     try {
       const response = await fetch(`${API_BASE_URL}/api/sales-history`, {
         headers: {
@@ -301,18 +299,14 @@ export default function App() {
       if (response.ok) {
         const data = await response.json();
         setSales(data);
-      } else {
-        console.error('Error al cargar el historial de ventas:', response.statusText);
-        showNotification('Error al cargar historial de ventas.', 'error');
       }
     } catch (error) {
       console.error('Error al conectar con el backend para ventas:', error);
-      showNotification('Error de conexión al cargar historial de ventas.', 'error');
     }
-  }, [user, showNotification]);
+  }, [user]);
 
   const fetchSuppliers = useCallback(async () => {
-    if (!user) return;
+    if (!user || !user.token) return;
     try {
       const response = await fetch(`${API_BASE_URL}/api/suppliers`, {
         headers: {
@@ -323,8 +317,6 @@ export default function App() {
       if (response.ok) {
         const data = await response.json();
         setSuppliers(data);
-      } else {
-        console.error('Error fetching suppliers:', response.status);
       }
     } catch (error) {
       console.error('Error fetching suppliers:', error);
@@ -332,7 +324,7 @@ export default function App() {
   }, [user]);
 
   const fetchSettings = useCallback(async () => {
-    if (!user) return;
+    if (!user || !user.token) return;
     try {
       const response = await fetch(`${API_BASE_URL}/api/settings`, {
         headers: {
@@ -345,9 +337,26 @@ export default function App() {
         if (data.time_offset) setTimeOffset(parseFloat(data.time_offset));
         if (data.notification_phone) setNotificationPhone(data.notification_phone);
         if (data.callmebot_apikey) setCallmebotApiKey(data.callmebot_apikey);
+        if (data.shop_open !== undefined) setIsShopOpen(data.shop_open === 'true');
+        if (data.estimated_prep_time) setEstimatedPrepTime(data.estimated_prep_time);
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
+    }
+  }, [user]);
+
+  const fetchStockAlerts = useCallback(async () => {
+    if (!user || user.role !== 'admin') return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/ai/stock-alerts`, {
+        headers: {
+          'Authorization': `Bearer ${user.token}`,
+          'x-user-role': user.role
+        }
+      });
+      if (res.ok) setStockAlertData(await res.json());
+    } catch (error) {
+      console.error('Error fetching stock alerts:', error);
     }
   }, [user]);
 
@@ -531,36 +540,32 @@ export default function App() {
     }
   }, [user, products, hasWelcomed]);
 
-  // --- ESCUCHA DE AUTO-PEDIDOS (POLLING) ---
+  // --- ESCUCHA DE AUTO-PEDIDOS (Real-time Socket.io) ---
   useEffect(() => {
-    if (user && user.role !== 'customer') { // Solo admin/vendedor ven esto
-      const interval = setInterval(async () => {
-        try {
-          const res = await fetch(`${API_BASE_URL}/api/pending-auto-orders`, {
-            headers: { 'Authorization': `Bearer ${user.token}` }
-          });
-          if (res.ok) {
-            const orders = await res.json();
-            setPendingAutoOrders(orders);
-            
-            // Si hay una orden nueva (id superior al último notificado)
-            if (orders.length > 0) {
-              const newestOrder = orders[0];
-              if (newestOrder.id !== lastNotifiedOrderId) {
-                playNotificationSound();
-                setLastNotifiedOrderId(newestOrder.id);
-                // Mostrar notificación especial
-                showNotification(`¡NUEVO PEDIDO DE ${newestOrder.customerName || 'Cliente'}!`, 'info');
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Error polling auto-orders:', err);
-        }
-      }, 5000);
-      return () => clearInterval(interval);
+    if (user && user.role !== 'customer') {
+      const socket = io(API_BASE_URL);
+
+      socket.on('newOrder', (order) => {
+        playNotificationSound();
+        setPendingAutoOrders(prev => [order, ...prev]);
+        showNotification(`¡NUEVO PEDIDO DE ${order.customerName || 'Cliente'}!`, 'info');
+      });
+
+      socket.on('orderUpdate', (updatedOrder) => {
+        setPendingAutoOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o).filter(o => o.status === 'pending' || o.status === 'preparing'));
+      });
+
+      // Carga inicial
+      fetch(`${API_BASE_URL}/api/pending-auto-orders`, {
+        headers: { 'Authorization': `Bearer ${user.token}` }
+      })
+      .then(res => res.json())
+      .then(setPendingAutoOrders)
+      .catch(console.error);
+
+      return () => socket.disconnect();
     }
-  }, [user, lastNotifiedOrderId, showNotification]);
+  }, [user, showNotification]);
 
   const handleDeleteSupplier = async (id) => {
     if (!window.confirm('¿Eliminar este proveedor?')) return;
@@ -784,88 +789,86 @@ export default function App() {
       return false;
     }
 
-    let transactionId = invoiceNumber;
     try {
+      showNotification('Sincronizando con el servidor...', 'info');
+      
+      // 1. Obtener ID real del servidor (ahora obligatorio y centralizado)
       const res = await fetch(`${API_BASE_URL}/api/next-transaction-id`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'x-user-role': user.role
         }
       });
-      if (res.ok) {
-        const data = await res.json();
-        transactionId = data.nextId;
-      }
-    } catch (e) {
-      console.error("Failed to fetch next transaction ID", e);
-    }
+      
+      if (!res.ok) throw new Error('Error al obtener ID de transacción');
+      const { nextId: transactionId } = await res.json();
 
-    const changeAmount = receivedAmount - total;
-    const currentUtcDate = new Date().toISOString();
+      const changeAmount = receivedAmount - total;
+      const currentUtcDate = new Date().toISOString();
 
-    // 1. Prepara los datos para la factura
-    const receiptData = {
-      id: transactionId,
-      items: cart,
-      total: total,
-      paymentMethod: paymentMethod,
-      receivedAmount: receivedAmount,
-      changeAmount: changeAmount,
-      date: currentUtcDate,
-      seller: user.name,
-    };
+      // 2. Intentar Sync con Backend (TODOS los items)
+      // Usamos el mismo transactionId para agrupar los productos de esta venta
+      await Promise.all(cart.map(item => {
+        const saleData = {
+          productId: item.id,
+          productName: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          transactionId: transactionId,
+          paymentMethod,
+          receivedAmount,
+          changeAmount,
+          date: currentUtcDate,
+        };
 
-    // 2. Guarda los datos en el estado para el modal y ábrelo
-    setCurrentReceiptData(receiptData);
-    setIsReceiptModalOpen(true);
+        return fetch(`${API_BASE_URL}/api/record-sale`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user.token}`
+          },
+          body: JSON.stringify(saleData),
+        }).then(r => {
+          if (!r.ok) throw new Error(`Error al registrar item: ${item.name}`);
+          return r.json();
+        });
+      }));
 
-
-    // 3. Actualizar Stock Local
-    const newProducts = products.map(p => {
-      const cartItem = cart.find(c => c.id === p.id);
-      if (cartItem) {
-        return { ...p, stock: p.stock - cartItem.quantity };
-      }
-      return p;
-    });
-    setProducts(newProducts);
-
-    // 4. Guardar Venta LOCALMENTE (Restaurado)
-    setSales(prev => [...prev, receiptData]);
-
-    // 5. Intentar Sync con Backend (Background)
-    Promise.all(cart.map(item => {
-      const saleData = {
-        productId: item.id,
-        productName: item.name,
-        quantity: item.quantity,
-        price: item.price,
+      // 3. Preparar datos para la factura y mostrar
+      const receiptData = {
+        id: transactionId,
         transactionId: transactionId,
-        paymentMethod,
-        receivedAmount,
-        changeAmount,
+        items: [...cart],
+        total: total,
+        paymentMethod: paymentMethod,
+        receivedAmount: receivedAmount,
+        changeAmount: changeAmount,
         date: currentUtcDate,
+        seller: user.name,
       };
 
-      return fetch(`${API_BASE_URL}/api/record-sale`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(saleData),
-      });
-    })).then(async () => {
-      fetchSales(); // Recargar historial después de sincronizar con el backend
+      setCurrentReceiptData(receiptData);
+      setIsReceiptModalOpen(true);
+
+      // 4. Si venía de una auto-orden (del catálogo), marcar como completada
       if (currentAutoOrderId) {
-        await updateAutoOrderStatus(currentAutoOrderId, 'ready', transactionId);
+        await updateAutoOrderStatus(currentAutoOrderId, 'delivered', transactionId);
         setCurrentAutoOrderId(null);
       }
-    }).catch(error => console.error('Error al registrar venta en backend:', error));
 
-    setCart([]);
-    setInvoiceNumber(transactionId + 1);
-    setRefreshKey(prev => prev + 1); // Forzar recarga del resumen diario
-    showNotification(`Venta #${transactionId} procesada!`);
+      // 5. Actualizar estado local
+      showNotification(`Venta #${transactionId} completada con éxito`);
+      setCart([]);
+      fetchProducts();
+      fetchSales();
+      setRefreshKey(prev => prev + 1);
 
-    return true; // Indica que el proceso de venta se inició
+      return true;
+    } catch (error) {
+      console.error('Error al procesar la venta:', error);
+      showNotification(`ERROR: ${error.message}`, 'error');
+      return false;
+    }
   };
 
   // --- LÓGICA DE INVENTARIO ---
@@ -1183,6 +1186,7 @@ export default function App() {
                 setEditingProduct={setEditingProduct}
                 handleMigration={handleMigration}
                 processImage={processImage}
+                user={user}
               />
             )}
             {view === 'history' && (user.role === 'admin' || user.role === 'seller') && <HistoryView sales={sales} onCancelSale={handleCancelSale} onShowReceipt={handleShowReceipt} timeOffset={timeOffset} />}
@@ -1791,7 +1795,23 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
         setIsLoading(false);
       }
     };
-    fetchChartData();
+
+    if (user && user.token) {
+      fetchChartData();
+      // También cargar alertas de stock
+      fetch(`${API_BASE_URL}/api/ai/stock-alerts`, {
+        headers: { 
+          'Authorization': `Bearer ${user.token}`, 
+          'x-user-role': user.role 
+        }
+      })
+      .then(res => {
+        if (!res.ok) throw new Error('Error al cargar alertas');
+        return res.json();
+      })
+      .then(setStockAlertData)
+      .catch(err => console.error('Silent error fetching alerts:', err.message));
+    }
   }, [user]);
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
@@ -1947,6 +1967,39 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
           </div>
         </div>
       </div>
+
+      {/* AI STOCK PREDICTIONS (NEW) */}
+      {stockAlertData.length > 0 && (
+        <div className="bg-indigo-900 text-white p-6 rounded-2xl shadow-xl border border-indigo-700 animate-in zoom-in-95 duration-500">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-black flex items-center gap-2">
+              <ShieldCheck className="text-indigo-300" /> PREDICCIONES DE INTELIGENCIA (STOCK)
+            </h3>
+            <span className="bg-indigo-500 text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest">Beta v1.0</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {stockAlertData.map((alert, idx) => (
+              <div key={idx} className="bg-indigo-800/50 p-4 rounded-xl border border-indigo-400/20 backdrop-blur-sm">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="font-bold text-indigo-100">{alert.name}</p>
+                  <span className="bg-rose-500 text-[9px] px-1.5 py-0.5 rounded font-black">{alert.probability} RIESGO</span>
+                </div>
+                <p className="text-xs text-indigo-200 mb-3">{alert.message}</p>
+                <div className="flex items-center justify-between">
+                   <div className="text-[10px]">
+                      <span className="text-indigo-400 block">Vendido hoy</span>
+                      <span className="font-bold">{alert.todaySales} unid.</span>
+                   </div>
+                   <div className="text-[10px] text-right">
+                      <span className="text-indigo-400 block">Stock Restante</span>
+                      <span className="font-bold text-rose-300">{alert.currentStock} unid.</span>
+                   </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex justify-between text-sm border-b border-slate-100 pb-2">
         <span>Valor Inventario</span>
         <span className="font-mono font-bold">{formatCurrency(products.reduce((a, b) => a + (b.price * b.stock), 0))}</span>
@@ -2484,7 +2537,8 @@ const InventoryView = ({
   editingProduct,
   setEditingProduct,
   handleMigration,
-  processImage
+  processImage,
+  user
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newProd, setNewProd] = useState({ name: '', price: '', stock: '', category: 'General', classification: 'B', manual_code: '', image: null, supplier_id: '' });
@@ -3449,6 +3503,49 @@ const SettingsView = ({ timeOffset, notificationPhone, callmebotApiKey, onUpdate
         </div>
 
         <div className="p-6 bg-slate-50 rounded-xl border border-slate-100">
+          <h3 className="font-bold text-slate-700 mb-2">Gestión de Catálogo Digital</h3>
+          <p className="text-sm text-slate-500 mb-4">Controle la disponibilidad de la tienda en línea y tiempos de entrega.</p>
+          
+          <div className="space-y-4">
+             <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                <div>
+                   <p className="font-bold text-slate-800">Estado de la Tienda</p>
+                   <p className="text-[10px] text-slate-500 uppercase font-black">{isShopOpen ? 'Abierta (Recibiendo pedidos)' : 'Cerrada (Solo catálogo)'}</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    const newVal = !isShopOpen;
+                    setIsShopOpen(newVal);
+                    onUpdateSettings({ shop_open: String(newVal) });
+                  }}
+                  className={`w-14 h-7 rounded-full transition-all relative ${isShopOpen ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                >
+                   <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all ${isShopOpen ? 'left-8' : 'left-1'}`} />
+                </button>
+             </div>
+
+             <div>
+                <label className="text-xs text-slate-400 uppercase font-black block mb-1">Tiempo de Preparación (mins)</label>
+                <div className="flex gap-2">
+                   <input 
+                    type="text" 
+                    placeholder="10-15" 
+                    className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                    value={estimatedPrepTime}
+                    onChange={(e) => setEstimatedPrepTime(e.target.value)}
+                   />
+                   <button 
+                    onClick={() => onUpdateSettings({ estimated_prep_time: estimatedPrepTime })}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold"
+                   >
+                    OK
+                   </button>
+                </div>
+             </div>
+          </div>
+        </div>
+
+        <div className="p-6 bg-slate-50 rounded-xl border border-slate-100">
           <h3 className="font-bold text-slate-700 mb-2">Información del Negocio</h3>
           <p className="text-sm text-slate-500">Configure el nombre, dirección y logo en las facturas.</p>
           <button className="mt-4 px-4 py-2 bg-violet-100 text-violet-700 rounded-lg text-sm font-bold hover:bg-violet-200 transition-colors">Editar Perfil</button>
@@ -3460,3 +3557,4 @@ const SettingsView = ({ timeOffset, notificationPhone, callmebotApiKey, onUpdate
 
 const UsersView = () => <UserManagementView />;
 const CashFlowView = () => <CashFlow />;
+}
