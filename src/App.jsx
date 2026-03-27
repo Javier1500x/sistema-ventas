@@ -3557,3 +3557,191 @@ const SettingsView = ({ timeOffset, notificationPhone, callmebotApiKey, onUpdate
 
 const UsersView = () => <UserManagementView />;
 const CashFlowView = () => <CashFlow />;
+
+const DashboardView = ({ summary, chartData }) => {
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+  const RADIAN = Math.PI / 180;
+  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }) => {
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    return (
+      <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central">
+        {`${(percent * 100).toFixed(0)}%`}
+      </text>
+    );
+  };
+
+  return (
+    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-6 duration-700">
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-4 border-b border-slate-200">
+        <div>
+          <h2 className="text-4xl font-black text-slate-800 tracking-tighter">TABLERO CENTRAL</h2>
+          <p className="text-slate-500 font-medium">Resumen general del rendimiento del negocio</p>
+        </div>
+        <div className="flex gap-3">
+           <button onClick={() => setRefreshKey(prev => prev + 1)} className="flex items-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl font-bold text-sm shadow-sm hover:bg-slate-50 transition-all">
+              Actualizar
+           </button>
+           <button onClick={handleDownloadPDF} className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all">
+              <FileText size={18} /> Exportar Reporte
+           </button>
+        </div>
+      </header>
+
+      {/* --- KPI CARDS --- */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 group hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-500">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl group-hover:scale-110 transition-transform duration-500">
+              <TrendingUp size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Ventas Hoy</p>
+              <h3 className="text-2xl font-black text-slate-800">{formatCurrency(summary.totalSales)}</h3>
+            </div>
+          </div>
+          <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden">
+             <div className="h-full bg-emerald-500 rounded-full w-[70%]" />
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 group hover:shadow-xl hover:shadow-blue-500/5 transition-all duration-500">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl group-hover:scale-110 transition-transform duration-500">
+              <ShoppingCart size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Órdenes</p>
+              <h3 className="text-2xl font-black text-slate-800">{summary.orderCount}</h3>
+            </div>
+          </div>
+           <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden">
+             <div className="h-full bg-blue-500 rounded-full w-[45%]" />
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 group hover:shadow-xl hover:shadow-amber-500/5 transition-all duration-500">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl group-hover:scale-110 transition-transform duration-500">
+              <DollarSign size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Promedio</p>
+              <h3 className="text-2xl font-black text-slate-800">{formatCurrency(summary.averageTicket)}</h3>
+            </div>
+          </div>
+           <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden">
+             <div className="h-full bg-amber-500 rounded-full w-[60%]" />
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 group hover:shadow-xl hover:shadow-rose-500/5 transition-all duration-500">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl group-hover:scale-110 transition-transform duration-500">
+              <AlertCircle size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Stock Bajo</p>
+              <h3 className="text-2xl font-black text-slate-800">{summary.lowStockCount} items</h3>
+            </div>
+          </div>
+           <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden">
+             <div className="h-full bg-rose-500 rounded-full w-[25%]" />
+          </div>
+        </div>
+      </div>
+
+      {/* --- CHARTS SECTION --- */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+         <div className="xl:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+           <div className="flex items-center justify-between mb-8">
+              <h3 className="text-xl font-black text-slate-800">FLUJO DE VENTAS (7 DÍAS)</h3>
+              <div className="flex items-center gap-2">
+                 <div className="w-3 h-3 bg-indigo-600 rounded-full" />
+                 <span className="text-xs font-bold text-slate-500">Total Venta</span>
+              </div>
+           </div>
+           <div className="h-[400px]">
+             <ResponsiveContainer width="100%" height="100%">
+               <BarChart data={chartData.dailySales}>
+                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                 <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontWeight: 600, fontSize: 12}} dy={10} />
+                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontWeight: 600, fontSize: 12}} tickFormatter={(val) => `C$${val}`} />
+                 <Tooltip 
+                    cursor={{fill: '#f8fafc'}}
+                    contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', padding: '12px'}}
+                 />
+                 <Bar dataKey="total" fill="#4f46e5" radius={[6, 6, 0, 0]} barSize={40} />
+               </BarChart>
+             </ResponsiveContainer>
+           </div>
+         </div>
+
+         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+           <h3 className="text-xl font-black text-slate-800 mb-8">CATEGORÍAS POPULARES</h3>
+           <div className="h-[320px]">
+             <ResponsiveContainer width="100%" height="100%">
+               <PieChart>
+                 <Pie
+                   data={chartData.categoryData}
+                   cx="50%"
+                   cy="50%"
+                   labelLine={false}
+                   label={renderCustomizedLabel}
+                   outerRadius={100}
+                   innerRadius={60}
+                   fill="#8884d8"
+                   dataKey="value"
+                 >
+                   {chartData.categoryData.map((entry, index) => (
+                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                   ))}
+                 </Pie>
+                 <Tooltip />
+                 <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{paddingTop: '20px', fontSize: '12px', fontWeight: 700}} />
+               </PieChart>
+             </ResponsiveContainer>
+           </div>
+           <div className="mt-6 p-4 bg-slate-50 rounded-2xl border border-slate-100 text-center">
+              <p className="text-xs font-bold text-slate-500">Tendencia detectada:</p>
+              <p className="text-sm font-black text-indigo-600 uppercase">Aumento en categoría bebidas</p>
+           </div>
+         </div>
+      </div>
+
+      {/* AI STOCK PREDICTIONS (NEW) */}
+      {stockAlertData.length > 0 && (
+        <div className="bg-indigo-900 text-white p-6 rounded-2xl shadow-xl border border-indigo-700 animate-in zoom-in-95 duration-500">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-black flex items-center gap-2">
+              <ShieldCheck className="text-indigo-300" /> PREDICCIONES DE INTELIGENCIA (STOCK)
+            </h3>
+            <span className="bg-indigo-500 text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest">Beta v1.0</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {stockAlertData.map((alert, idx) => (
+              <div key={idx} className="bg-indigo-800/50 p-4 rounded-xl border border-indigo-400/20 backdrop-blur-sm">
+                <div className="flex justify-between items-start mb-2">
+                  <p className="font-bold text-indigo-100">{alert.name}</p>
+                  <span className="bg-rose-500 text-[9px] px-1.5 py-0.5 rounded font-black">{alert.probability} RIESGO</span>
+                </div>
+                <div className="flex items-end justify-between">
+                   <div>
+                      <p className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider">Agotamiento en</p>
+                      <p className="text-lg font-black text-white">{alert.prediction}</p>
+                   </div>
+                   <div className="text-right">
+                      <span className="text-indigo-400 block">Stock Restante</span>
+                      <span className="font-bold text-rose-300">{alert.currentStock} unid.</span>
+                   </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
