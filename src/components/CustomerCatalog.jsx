@@ -432,7 +432,7 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
                 </div>
               </div>
             )}
-            {orderStatus === 'ready' && (
+            {(orderStatus === 'ready' || orderStatus === 'delivered') && (
               <div className="relative">
                 <div className="bg-white p-6 rounded-full shadow-2xl border border-emerald-100 inline-flex mx-auto">
                   <ShieldCheck size={64} className="text-emerald-500" />
@@ -455,7 +455,7 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
                 <p className="text-slate-400 font-medium text-sm mt-2">El vendedor está atendiendo tu pedido 📦</p>
               </>
             )}
-            {orderStatus === 'ready' && (
+            {(orderStatus === 'ready' || orderStatus === 'delivered') && (
               <>
                 <h2 className="text-2xl font-black text-emerald-600 tracking-tight">¡Listo para Retirar!</h2>
                 <p className="text-slate-500 font-medium text-sm mt-2">Pasa al mostrador a recoger tus productos ✨</p>
@@ -466,10 +466,12 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
           {/* Stepper Dots */}
           <div className="flex justify-center items-center gap-6 mb-8">
             {['pending', 'preparing', 'ready'].map((s, i) => {
-              const active = (orderStatus === s) || (orderStatus === 'preparing' && i === 0) || (orderStatus === 'ready');
+              const isFinal = orderStatus === 'ready' || orderStatus === 'delivered';
+              const active = (orderStatus === s) || (orderStatus === 'preparing' && i === 0) || (isFinal);
+              const colorClass = active ? ( (isFinal && i === 2) ? 'bg-emerald-500 scale-125' : 'bg-indigo-600 scale-125') : 'bg-slate-200';
               return (
                 <div key={s} className="flex flex-col items-center gap-2">
-                  <div className={`w-4 h-4 rounded-full transition-all duration-700 ${active ? (s === 'ready' ? 'bg-emerald-500 scale-125' : 'bg-indigo-600 scale-125') : 'bg-slate-200'}`} />
+                  <div className={`w-4 h-4 rounded-full transition-all duration-700 ${colorClass}`} />
                   <span className={`text-[9px] font-bold uppercase tracking-wider ${active ? 'text-slate-700' : 'text-slate-300'}`}>
                     {s === 'pending' ? 'Recibido' : s === 'preparing' ? 'Proceso' : 'Listo'}
                   </span>
@@ -478,8 +480,8 @@ export default function CustomerCatalog({ apiBaseUrl, formatCurrency }) {
             })}
           </div>
 
-          {/* QR Receipt (only when ready) */}
-          {orderStatus === 'ready' && orderData && (
+          {/* QR Receipt (only when ready or delivered) */}
+          {(orderStatus === 'ready' || orderStatus === 'delivered') && orderData && (
             <div className="bg-slate-100/50 rounded-3xl p-6 mb-6 border border-slate-200/50">
               <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">Comprobante Digital</p>
               <div className="bg-white p-2 rounded-2xl inline-block shadow-md border border-slate-200 mx-auto">
