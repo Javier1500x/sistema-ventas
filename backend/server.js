@@ -43,8 +43,7 @@ const {
   getSaleByPublicId,
   getPendingAutoOrders,
   updateAutoOrderStatus,
-  getNextTransactionId,
-  getAllProducts
+  getNextTransactionId
 } = require('./database');
 const { getDailySummary, getSalesChartData, getComboSuggestions, getStockPredictor } = require('./decisionEngine');
 const { sendWhatsAppMessage, sendLowStockAlert } = require('./notificationService');
