@@ -15,7 +15,8 @@
     "tailwindcss-init": "tailwindcss init -p",
     "android:build": "npm run build && npx cap sync android",
     "android:open": "npx cap open android",
-    "start:backend": "node backend/server.js"
+    "start:backend": "node backend/server.js",
+    "start": "node backend/server.js"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",
@@ -39,7 +40,7 @@
     "react-dom": "^18.3.1",
     "recharts": "^3.7.0",
     "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.1",
+    "socket.io-client": "^4.8.3",
     "tailwindcss": "^3.4.4",
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^13.0.0",

@@ -125,6 +125,30 @@ const initDb = async () => {
       status TEXT DEFAULT 'pending',
       date TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS combos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      price REAL NOT NULL,
+      description TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS combo_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      combo_id INTEGER,
+      product_id INTEGER,
+      quantity INTEGER,
+      FOREIGN KEY (combo_id) REFERENCES combos(id),
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS appliances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      watts REAL NOT NULL,
+      hours_per_day REAL DEFAULT 24,
+      kwh_cost REAL NOT NULL
+    );
   `);
 
   // Insertar offset de tiempo por defecto si no existe
@@ -558,6 +582,50 @@ const updateAutoOrderStatus = async (idOrPublicId, status, transactionId = null)
   return { id: idOrPublicId, status, transactionId };
 };
 
+// --- Combos ---
+const getAllCombos = async () => {
+  const combos = await query('SELECT * FROM combos');
+  const result = [];
+  for (const combo of combos) {
+    const items = await query('SELECT ci.*, p.name as productName, p.price as originalPrice FROM combo_items ci JOIN products p ON ci.product_id = p.id WHERE ci.combo_id = ?', [combo.id]);
+    result.push({ ...combo, items });
+  }
+  return result;
+};
+
+const createCombo = async ({ name, price, description, items }) => {
+  const result = await run('INSERT INTO combos (name, price, description) VALUES (?, ?, ?)', [name, price, description]);
+  const comboId = Number(result.lastInsertRowid);
+  for (const item of items) {
+    await run('INSERT INTO combo_items (combo_id, product_id, quantity) VALUES (?, ?, ?)', [comboId, item.product_id, item.quantity]);
+  }
+  return { id: comboId, name, price, description, items };
+};
+
+const deleteCombo = async (id) => {
+  await run('DELETE FROM combo_items WHERE combo_id = ?', [id]);
+  const result = await run('DELETE FROM combos WHERE id = ?', [id]);
+  return { changes: result.rowsAffected };
+};
+
+// --- Appliances (Idea 9) ---
+const getAllAppliances = async () => query('SELECT * FROM appliances', []);
+
+const createAppliance = async ({ name, watts, hours_per_day, kwh_cost }) => {
+  const result = await run('INSERT INTO appliances (name, watts, hours_per_day, kwh_cost) VALUES (?, ?, ?, ?)', [name, watts, hours_per_day || 24, kwh_cost]);
+  return { id: Number(result.lastInsertRowid), name, watts, hours_per_day, kwh_cost };
+};
+
+const updateAppliance = async (id, { name, watts, hours_per_day, kwh_cost }) => {
+  await run('UPDATE appliances SET name = ?, watts = ?, hours_per_day = ?, kwh_cost = ? WHERE id = ?', [name, watts, hours_per_day, kwh_cost, id]);
+  return { id, name, watts, hours_per_day, kwh_cost };
+};
+
+const deleteAppliance = async (id) => {
+  const result = await run('DELETE FROM appliances WHERE id = ?', [id]);
+  return { changes: result.rowsAffected };
+};
+
 module.exports = {
   db,
   initDb,
@@ -595,5 +663,12 @@ module.exports = {
   getSaleByPublicId,
   getPendingAutoOrders,
   updateAutoOrderStatus,
-  getNextTransactionId
+  getNextTransactionId,
+  getAllCombos,
+  createCombo,
+  deleteCombo,
+  getAllAppliances,
+  createAppliance,
+  updateAppliance,
+  deleteAppliance
 };

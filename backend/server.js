@@ -450,6 +450,106 @@ app.post('/api/cash-closings', async (req, res) => {
   }
 });
 
+// --- Combos ---
+app.get('/api/combos', async (req, res) => {
+  try {
+    const combos = await getAllCombos();
+    res.json(combos);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/combos', async (req, res) => {
+  try {
+    const combo = await createCombo(req.body);
+    res.json(combo);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/combos/:id', async (req, res) => {
+  try {
+    await deleteCombo(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- Appliances (Idea 9) ---
+app.get('/api/appliances', async (req, res) => {
+  try {
+    const appliances = await getAllAppliances();
+    res.json(appliances);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/appliances', async (req, res) => {
+  try {
+    const appliance = await createAppliance(req.body);
+    res.json(appliance);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/appliances/:id', async (req, res) => {
+  try {
+    const appliance = await updateAppliance(req.params.id, req.body);
+    res.json(appliance);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/appliances/:id', async (req, res) => {
+  try {
+    await deleteAppliance(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- Dashboard Stats ---
+app.get('/api/dashboard/stats', async (req, res) => {
+  try {
+    const sales = await getAllSales();
+    const products = await getAllProducts();
+    const appliances = await getAllAppliances();
+    
+    // Calcular ventas por hora
+    const salesByHour = Array(24).fill(0);
+    sales.forEach(sale => {
+      const saleDate = new Date(sale.date);
+      const hour = saleDate.getHours();
+      if (!isNaN(hour)) salesByHour[hour] += sale.quantity * sale.price;
+    });
+
+    // Calcular ventas por categoría
+    const categories = {};
+    sales.forEach(sale => {
+      const product = products.find(p => String(p.id) === String(sale.productId) || p.manual_code === sale.productId);
+      const cat = (product && product.category) ? product.category : 'Otros';
+      categories[cat] = (categories[cat] || 0) + (sale.quantity * sale.price);
+    });
+
+    res.json({
+      salesByHour,
+      salesByCategory: Object.entries(categories).map(([name, value]) => ({ name, value })),
+      totalProducts: products.length,
+      lowStock: products.filter(p => p.stock <= 5).length,
+      appliancesCount: appliances.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/settings', async (req, res) => {
   try {
     const time_offset = await getSetting('time_offset');
@@ -782,8 +882,19 @@ cron.schedule('0 12 * * *', async () => {
 
   if (frontendPath) {
     app.use(express.static(frontendPath));
+    
+    // Servir el subsistema si existe la carpeta 'subsistema/dist'
+    const subsistemaPath = path.join(process.cwd(), 'subsistema', 'dist');
+    if (fs.existsSync(subsistemaPath)) {
+      app.use('/dashboard', express.static(subsistemaPath));
+      app.get('/dashboard/*', (req, res) => {
+        res.sendFile(path.join(subsistemaPath, 'index.html'));
+      });
+      console.log('✅ Subsistema servido desde:', subsistemaPath);
+    }
+
     app.get('*', (req, res, next) => {
-      if (!req.path.startsWith('/api')) {
+      if (!req.path.startsWith('/api') && !req.path.startsWith('/dashboard')) {
         res.sendFile(path.join(frontendPath, 'index.html'));
       } else {
         next();
