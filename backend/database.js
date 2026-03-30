@@ -59,13 +59,16 @@ const initDb = async () => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       price REAL NOT NULL,
-      stock INTEGER NOT NULL,
+      stock REAL NOT NULL, -- Cambiado a REAL para permitir fracciones (ej. 0.5 libras)
       category TEXT,
       manual_code TEXT UNIQUE,
       cost_price REAL DEFAULT 0,
       image TEXT,
       supplier_id INTEGER,
-      classification TEXT DEFAULT 'B'
+      classification TEXT DEFAULT 'B',
+      unit_type TEXT DEFAULT 'unit', -- 'unit', 'weight', 'volume'
+      conversion_factor REAL DEFAULT 1, -- Cuántas unidades pequeñas hay en una grande
+      parent_product_id INTEGER -- Para vincular Libra con Saco
     );
 
     CREATE TABLE IF NOT EXISTS suppliers (

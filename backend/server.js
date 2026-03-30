@@ -518,16 +518,20 @@ app.delete('/api/appliances/:id', async (req, res) => {
 // --- Dashboard Stats ---
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
-    const sales = await getAllSales();
     const products = await getAllProducts();
+    const sales = await getAllSales();
     const appliances = await getAllAppliances();
     
-    // Calcular ventas por hora
+    // Calcular ventas por hora (Últimas 24 horas)
     const salesByHour = Array(24).fill(0);
+    const now = new Date();
     sales.forEach(sale => {
       const saleDate = new Date(sale.date);
-      const hour = saleDate.getHours();
-      if (!isNaN(hour)) salesByHour[hour] += sale.quantity * sale.price;
+      // Solo contar ventas de hoy
+      if (saleDate.toDateString() === now.toDateString()) {
+        const hour = saleDate.getHours();
+        if (!isNaN(hour)) salesByHour[hour] += (sale.quantity * sale.price);
+      }
     });
 
     // Calcular ventas por categoría
@@ -545,6 +549,31 @@ app.get('/api/dashboard/stats', async (req, res) => {
       lowStock: products.filter(p => p.stock <= 5).length,
       appliancesCount: appliances.length
     });
+  } catch (error) {
+    console.error('Error en dashboard stats:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- Fraccionamiento (Idea 4) ---
+app.post('/api/products/convert', authenticateToken, authorizeRole('admin'), async (req, res) => {
+  try {
+    const { parentId, childId, quantityToConvert } = req.body;
+    // Ejemplo: Convertir 1 Saco (parentId) en 100 Libras (childId)
+    const parentProduct = (await getAllProducts()).find(p => p.id == parentId);
+    if (!parentProduct || parentProduct.stock < quantityToConvert) {
+      return res.status(400).json({ message: 'Stock insuficiente del producto original.' });
+    }
+
+    const childProduct = (await getAllProducts()).find(p => p.id == childId);
+    if (!childProduct) return res.status(400).json({ message: 'Producto destino no encontrado.' });
+
+    const unitsToAdd = quantityToConvert * childProduct.conversion_factor;
+
+    await updateProductStock(parentId, -quantityToConvert);
+    await updateProductStock(childId, unitsToAdd);
+
+    res.json({ success: true, message: `Se convirtieron ${quantityToConvert} unidades en ${unitsToAdd} fracciones.` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

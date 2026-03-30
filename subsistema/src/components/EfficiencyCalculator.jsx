@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Zap, Plus, Trash2, Save, Info, Calculator, DollarSign } from 'lucide-react';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = '/api';
 
 const EfficiencyCalculator = () => {
   const [appliances, setAppliances] = useState([]);

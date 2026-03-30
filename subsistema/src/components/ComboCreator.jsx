@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Package, Plus, Trash2, Save, Search, ShoppingCart } from 'lucide-react';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = '/api';
 
 const ComboCreator = () => {
   const [products, setProducts] = useState([]);
