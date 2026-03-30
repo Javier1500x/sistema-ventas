@@ -20,7 +20,7 @@ const ComboCreator = () => {
   const fetchData = async () => {
     try {
       const [prodRes, comboRes] = await Promise.all([
-        axios.get(`${API_URL}/products`),
+        axios.get(`${API_URL}/dashboard/products`),
         axios.get(`${API_URL}/combos`)
       ]);
       setProducts(prodRes.data);

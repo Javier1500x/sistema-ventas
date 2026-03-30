@@ -10,8 +10,7 @@ import {
 import axios from 'axios';
 import { motion } from 'framer-motion';
 
-const API_URL = '/api';
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const API_URL = '/api/dashboard'; // Ruta pública corregida
 
 const Dashboard = () => {
   const [stats, setStats] = useState(null);
@@ -20,7 +19,7 @@ const Dashboard = () => {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await axios.get(`${API_URL}/dashboard/stats`);
+        const response = await axios.get(`${API_URL}/stats`);
         setStats(response.data);
       } catch (error) {
         console.error('Error al cargar estadísticas:', error);

@@ -44,7 +44,15 @@ const {
   getSaleByPublicId,
   getPendingAutoOrders,
   updateAutoOrderStatus,
-  getNextTransactionId
+  getNextTransactionId,
+  getAllCombos,
+  createCombo,
+  deleteCombo,
+  getAllAppliances,
+  createAppliance,
+  updateAppliance,
+  deleteAppliance,
+  getDashboardTotals
 } = require('./database');
 const { getDailySummary, getSalesChartData, getComboSuggestions, getStockPredictor } = require('./decisionEngine');
 const { sendWhatsAppMessage, sendLowStockAlert } = require('./notificationService');

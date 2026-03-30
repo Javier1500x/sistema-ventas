@@ -15,7 +15,7 @@ const Fraccionamiento = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const res = await axios.get(`${API_URL}/products`);
+        const res = await axios.get(`${API_URL}/dashboard/products`);
         setProducts(res.data);
       } catch (err) {
         console.error('Error fetching products');
