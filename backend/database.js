@@ -629,6 +629,20 @@ const deleteAppliance = async (id) => {
   return { changes: result.rowsAffected };
 };
 
+// --- Estadísticas para el Dashboard ---
+const getDashboardTotals = async () => {
+  const products = await query('SELECT COUNT(*) as total, SUM(CASE WHEN stock <= 5 THEN 1 ELSE 0 END) as lowStock FROM products');
+  const appliances = await query('SELECT COUNT(*) as total FROM appliances');
+  const salesToday = await query("SELECT SUM(price * quantity) as total FROM sales_history WHERE date LIKE ?", [`${new Date().toISOString().split('T')[0]}%`]);
+  
+  return {
+    totalProducts: products[0].total || 0,
+    lowStock: products[0].lowStock || 0,
+    appliancesCount: appliances[0].total || 0,
+    salesToday: salesToday[0].total || 0
+  };
+};
+
 module.exports = {
   db,
   initDb,
@@ -673,5 +687,6 @@ module.exports = {
   getAllAppliances,
   createAppliance,
   updateAppliance,
-  deleteAppliance
+  deleteAppliance,
+  getDashboardTotals
 };

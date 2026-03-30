@@ -518,19 +518,17 @@ app.delete('/api/appliances/:id', async (req, res) => {
 // --- Dashboard Stats ---
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
-    const products = await getAllProducts();
+    const totals = await getDashboardTotals();
     const sales = await getAllSales();
-    const appliances = await getAllAppliances();
+    const products = await getAllProducts();
     
-    // Calcular ventas por hora (Últimas 24 horas)
+    // Calcular ventas por hora (Hoy)
     const salesByHour = Array(24).fill(0);
-    const now = new Date();
+    const today = new Date().toISOString().split('T')[0];
     sales.forEach(sale => {
-      const saleDate = new Date(sale.date);
-      // Solo contar ventas de hoy
-      if (saleDate.toDateString() === now.toDateString()) {
-        const hour = saleDate.getHours();
-        if (!isNaN(hour)) salesByHour[hour] += (sale.quantity * sale.price);
+      if (sale.date && sale.date.startsWith(today)) {
+        const hour = new Date(sale.date).getHours();
+        if (!isNaN(hour)) salesByHour[hour] += sale.quantity * sale.price;
       }
     });
 
@@ -543,14 +541,11 @@ app.get('/api/dashboard/stats', async (req, res) => {
     });
 
     res.json({
+      ...totals,
       salesByHour,
-      salesByCategory: Object.entries(categories).map(([name, value]) => ({ name, value })),
-      totalProducts: products.length,
-      lowStock: products.filter(p => p.stock <= 5).length,
-      appliancesCount: appliances.length
+      salesByCategory: Object.entries(categories).map(([name, value]) => ({ name, value }))
     });
   } catch (error) {
-    console.error('Error en dashboard stats:', error);
     res.status(500).json({ error: error.message });
   }
 });
