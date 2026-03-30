@@ -226,6 +226,19 @@ const initDb = async () => {
     console.error("Error en migración auto_orders (transactionId):", e.message);
   }
 
+  // Migración: Añadir columnas de fraccionamiento a products
+  try {
+    const tableInfo = await query("PRAGMA table_info(products)");
+    if (!tableInfo.some(c => c.name === 'unit_type')) {
+      await db.execute("ALTER TABLE products ADD COLUMN unit_type TEXT DEFAULT 'unit'");
+      await db.execute("ALTER TABLE products ADD COLUMN conversion_factor REAL DEFAULT 1");
+      await db.execute("ALTER TABLE products ADD COLUMN parent_product_id INTEGER");
+      console.log("Migración exitosa: Columnas de fraccionamiento añadidas.");
+    }
+  } catch (e) {
+    console.error("Error en migración products (fraccionamiento):", e.message);
+  }
+
   console.log('Base de datos inicializada correctamente.');
 };
 

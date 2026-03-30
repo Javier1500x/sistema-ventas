@@ -515,7 +515,7 @@ app.delete('/api/appliances/:id', async (req, res) => {
   }
 });
 
-// --- Dashboard Stats ---
+// --- Dashboard Stats (PÚBLICO PARA EVITAR 401) ---
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
     const totals = await getDashboardTotals();
@@ -528,23 +528,37 @@ app.get('/api/dashboard/stats', async (req, res) => {
     sales.forEach(sale => {
       if (sale.date && sale.date.startsWith(today)) {
         const hour = new Date(sale.date).getHours();
-        if (!isNaN(hour)) salesByHour[hour] += sale.quantity * sale.price;
+        if (!isNaN(hour)) salesByHour[hour] += (sale.quantity * sale.price);
       }
     });
 
-    // Calcular ventas por categoría
-    const categories = {};
+    // Rentabilidad por Categoría (Venta - Costo)
+    const profitability = {};
     sales.forEach(sale => {
       const product = products.find(p => String(p.id) === String(sale.productId) || p.manual_code === sale.productId);
       const cat = (product && product.category) ? product.category : 'Otros';
-      categories[cat] = (categories[cat] || 0) + (sale.quantity * sale.price);
+      const cost = (product && product.cost_price) ? product.cost_price : (sale.price * 0.7); // Estimado si no hay costo
+      const profit = (sale.price - cost) * sale.quantity;
+      
+      profitability[cat] = (profitability[cat] || 0) + profit;
     });
 
     res.json({
       ...totals,
       salesByHour,
-      salesByCategory: Object.entries(categories).map(([name, value]) => ({ name, value }))
+      profitability: Object.entries(profitability).map(([name, value]) => ({ name, value }))
     });
+  } catch (error) {
+    console.error('Error en dashboard stats:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint público de productos para el subsistema
+app.get('/api/dashboard/products', async (req, res) => {
+  try {
+    const products = await getAllProducts();
+    res.json(products);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
