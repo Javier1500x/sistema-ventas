@@ -6,7 +6,7 @@ import {
 import {
   TrendingUp, Package, AlertTriangle, Activity, Zap,
   DollarSign, ArrowUpRight, ArrowDownRight, RefreshCw,
-  ShoppingBag, XCircle, Award, CreditCard
+  ShoppingBag, XCircle, Award, CreditCard, Clock
 } from 'lucide-react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -106,38 +106,72 @@ const Dashboard = () => {
         <KpiCard label="Sin Stock" value={overview.outOfStock || 0} icon={<Package size={20} className="text-purple-400" />} color="purple" sub={`${overview.lowStockCount || 0} en alerta`} up={false} />
       </div>
 
-      {/* Gráfica de tendencia — 7 días */}
-      <div className="bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 shadow-2xl">
-        <div className="flex justify-between items-start mb-8 flex-wrap gap-4">
-          <div>
-            <h2 className="text-2xl font-black text-white">Tendencia de Ingresos</h2>
-            <p className="text-slate-500 text-sm mt-1">Ingresos diarios · últimos 7 días</p>
+      {/* Charts Section: Tendencia + Horas Pico */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Main Revenue Chart */}
+        <div className="bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 shadow-xl">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-xl font-black text-white flex items-center gap-2">
+                <TrendingUp size={20} className="text-blue-400" />
+                Tendencia de Ingresos
+              </h2>
+              <p className="text-slate-500 text-[10px] mt-1 uppercase tracking-widest font-black">Últimos 7 días</p>
+            </div>
+            <div className="bg-blue-500/10 text-blue-400 px-3 py-1.5 rounded-xl text-[10px] font-black border border-blue-500/20">
+              TOTAL: {fmtC(weekRevenue)}
+            </div>
           </div>
-          <div className="text-right">
-            <p className="text-3xl font-black text-white">{fmtC(weekRevenue)}</p>
-            <p className="text-slate-500 text-xs">Total de la semana</p>
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="label" stroke="#475569" fontSize={11} axisLine={false} tickLine={false} />
+                <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} tickFormatter={v => `C$${(v/1000).toFixed(0)}k`} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1e293b', borderRadius: '16px' }}
+                  formatter={(v) => [fmtC(v), 'Ingreso']}
+                />
+                <Area type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#gradRevenue)" />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
-        <div className="h-[320px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-              <XAxis dataKey="label" stroke="#475569" fontSize={11} axisLine={false} tickLine={false} />
-              <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} tickFormatter={v => `C$${(v/1000).toFixed(0)}k`} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1e293b', borderRadius: '16px', boxShadow: '0 25px 50px rgba(0,0,0,0.5)' }}
-                labelStyle={{ color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}
-                formatter={(v) => [fmtC(v), 'Ingresos']}
-              />
-              <Area type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#gradRevenue)" dot={{ fill: '#3b82f6', strokeWidth: 0, r: 4 }} activeDot={{ r: 6, fill: '#60a5fa' }} />
-            </AreaChart>
-          </ResponsiveContainer>
+
+        {/* Peak Hours Chart */}
+        <div className="bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 shadow-xl">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-xl font-black text-white flex items-center gap-2">
+                <Clock size={20} className="text-amber-400" />
+                Horas Pico
+              </h2>
+              <p className="text-slate-500 text-[10px] mt-1 uppercase tracking-widest font-black">Actividad Transaccional</p>
+            </div>
+            <div className="bg-amber-500/10 text-amber-400 px-3 py-1.5 rounded-xl text-[10px] font-black border border-amber-500/20 uppercase">
+              GMT-6 Local
+            </div>
+          </div>
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data.hourlySales}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="hour" stroke="#475569" fontSize={10} axisLine={false} tickLine={false} interval={3} />
+                <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1e293b', borderRadius: '16px' }}
+                  formatter={(v) => [v, 'Ventas/Atención']}
+                />
+                <Bar dataKey="count" name="Ventas" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={25} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       </div>
 

@@ -6,9 +6,10 @@ import Fraccionamiento from './components/Fraccionamiento';
 import StockPredictor from './components/StockPredictor';
 import LiveOrders from './components/LiveOrders';
 import ProfitAnalysis from './components/ProfitAnalysis';
+import CustomerInsights from './components/CustomerInsights';
 import {
   LayoutDashboard, Scissors, Zap, Menu, X, ShoppingBag,
-  TrendingUp, ShoppingCart, BarChart3, Package
+  TrendingUp, ShoppingCart, BarChart3, Package, Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
@@ -63,6 +64,13 @@ function App() {
       desc: 'Márgenes y ganancias'
     },
     {
+      id: 'loyalty',
+      label: 'Fidelidad',
+      icon: <Users size={18} />,
+      color: 'rose',
+      desc: 'Análisis de clientes'
+    },
+    {
       id: 'combos',
       label: 'Combos',
       icon: <ShoppingBag size={18} />,
@@ -93,6 +101,7 @@ function App() {
     purple: 'text-purple-400',
     pink: 'text-pink-400',
     orange: 'text-orange-400',
+    rose: 'text-rose-400',
   };
 
   const BADGE_MAP = {
@@ -103,6 +112,7 @@ function App() {
     purple: 'bg-purple-500',
     pink: 'bg-pink-500',
     orange: 'bg-orange-500',
+    rose: 'bg-rose-500',
   };
 
   return (
@@ -245,6 +255,7 @@ function App() {
             {activeTab === 'orders' && <LiveOrders />}
             {activeTab === 'stock' && <StockPredictor />}
             {activeTab === 'profit' && <ProfitAnalysis />}
+            {activeTab === 'loyalty' && <CustomerInsights />}
             {activeTab === 'combos' && <ComboCreator />}
             {activeTab === 'fraccionamiento' && <Fraccionamiento />}
             {activeTab === 'efficiency' && <EfficiencyCalculator />}

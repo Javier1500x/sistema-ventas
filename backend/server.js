@@ -624,20 +624,58 @@ app.put('/api/dashboard/orders/:id/status', async (req, res) => {
 app.get('/api/dashboard/analytics', async (req, res) => {
   try {
     const [sales, products] = await Promise.all([getAllSales(), getAllProducts()]);
+    
+    // Configuración de zona horaria Nicaragua (GMT-6)
+    const nicaraguaDate = () => {
+      const d = new Date();
+      // UTC - 6 horas
+      d.setHours(d.getHours() - 6);
+      return d;
+    };
 
-    // Ventas por día (últimos 7 días)
+    // Ventas por día (últimos 7 días) — Mejorado para zona horaria
     const dailySales = {};
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
+      d.setHours(d.getHours() - 6); // Ajuste GMT-6
       d.setDate(d.getDate() - i);
       const key = d.toISOString().split('T')[0];
       dailySales[key] = { date: key, revenue: 0, count: 0 };
     }
+
+    // Horas Pico (0-23)
+    const hourlySales = Array.from({ length: 24 }, (_, i) => ({ hour: `${i}:00`, revenue: 0, count: 0 }));
+
+    // Ranking de Clientes
+    const customerRanking = {};
+
     sales.forEach(sale => {
-      const day = sale.date ? sale.date.split('T')[0] : null;
+      // Ajustar fecha de la venta a GMT-6 para comparación real
+      const saleDateUTC = new Date(sale.date);
+      const saleDateNI = new Date(saleDateUTC.getTime() - (6 * 60 * 60 * 1000));
+      const day = saleDateNI.toISOString().split('T')[0];
+
       if (day && dailySales[day]) {
         dailySales[day].revenue += sale.price * sale.quantity;
         dailySales[day].count += 1;
+      }
+
+      // Lógica de Horas Pico (basada en el horario local de Nicaragua)
+      const hour = saleDateNI.getUTCHours(); // getUTCHours de un objeto ya restado nos da la hora local correcta
+      if (hourlySales[hour]) {
+        hourlySales[hour].revenue += sale.price * sale.quantity;
+        hourlySales[hour].count += 1;
+      }
+
+      // Ranking de Clientes (Loyalty)
+      const customer = sale.customerName || 'Cliente General';
+      if (!customerRanking[customer]) {
+        customerRanking[customer] = { name: customer, total: 0, orders: 0, lastVisit: sale.date };
+      }
+      customerRanking[customer].total += sale.price * sale.quantity;
+      customerRanking[customer].orders += 1;
+      if (new Date(sale.date) > new Date(customerRanking[customer].lastVisit)) {
+        customerRanking[customer].lastVisit = sale.date;
       }
     });
 
@@ -649,36 +687,35 @@ app.get('/api/dashboard/analytics', async (req, res) => {
       productRevenue[key].revenue += sale.price * sale.quantity;
       productRevenue[key].units += sale.quantity;
     });
+
     const topProducts = Object.values(productRevenue)
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 10);
 
-    // Distribución de ventas por categoría (para Pie chart)
     const categoryRevenue = {};
     sales.forEach(sale => {
       const prod = products.find(p => String(p.id) === String(sale.productId) || p.manual_code === sale.productId);
       const cat = (prod && prod.category) ? prod.category : 'Sin categoría';
       categoryRevenue[cat] = (categoryRevenue[cat] || 0) + (sale.price * sale.quantity);
     });
+
     const categoryData = Object.entries(categoryRevenue)
       .map(([name, value]) => ({ name, value: Math.round(value) }))
       .sort((a, b) => b.value - a.value);
 
-    // Ventas por método de pago
     const paymentMethods = {};
     sales.forEach(sale => {
       const method = sale.paymentMethod || 'Desconocido';
       paymentMethods[method] = (paymentMethods[method] || 0) + (sale.price * sale.quantity);
     });
 
-    // Productos con stock crítico (menos de 10 unidades) con proyección
+    // Productos con stock crítico (menos de 10 unidades)
     const criticalStock = products
       .filter(p => p.stock <= 10)
       .map(p => {
-        // Calcular promedio de ventas diarias de este producto
         const prodSales = sales.filter(s => String(s.productId) === String(p.id) || p.manual_code === s.productId);
         const totalUnits = prodSales.reduce((sum, s) => sum + s.quantity, 0);
-        const avgDailySales = totalUnits / 7; // últimos 7 días estimado
+        const avgDailySales = totalUnits / 7; 
         const daysLeft = avgDailySales > 0 ? Math.floor(p.stock / avgDailySales) : 999;
         return {
           id: p.id,
@@ -692,12 +729,13 @@ app.get('/api/dashboard/analytics', async (req, res) => {
       })
       .sort((a, b) => a.daysLeft - b.daysLeft);
 
-    // Tasa de conversión de métodos de pago
     const totalSalesCount = sales.filter(s => s.status !== 'cancelled').length;
     const cancelledCount = sales.filter(s => s.status === 'cancelled').length;
 
     res.json({
       dailySales: Object.values(dailySales),
+      hourlySales,
+      topCustomers: Object.values(customerRanking).sort((a, b) => b.total - a.total).slice(0, 15),
       topProducts,
       categoryData,
       paymentMethods: Object.entries(paymentMethods).map(([name, value]) => ({ name, value: Math.round(value) })),
