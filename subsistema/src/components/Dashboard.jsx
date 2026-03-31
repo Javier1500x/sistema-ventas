@@ -1,216 +1,336 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  BarChart, Bar, Cell, Legend, PieChart, Pie
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, Cell, PieChart, Pie, Legend
 } from 'recharts';
-import { 
-  TrendingUp, Package, AlertTriangle, 
-  Activity, Zap, DollarSign, ArrowUpRight, ArrowDownRight 
+import {
+  TrendingUp, Package, AlertTriangle, Activity, Zap,
+  DollarSign, ArrowUpRight, ArrowDownRight, RefreshCw,
+  ShoppingBag, XCircle, Award, CreditCard
 } from 'lucide-react';
 import axios from 'axios';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
-const API_URL = '/api/dashboard'; // Ruta pública corregida
+const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
+
+const fmt = (n) => Number(n || 0).toLocaleString('es-NI', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const fmtC = (n) => `C$ ${fmt(n)}`;
 
 const Dashboard = () => {
-  const [stats, setStats] = useState(null);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchData = useCallback(async (isManual = false) => {
+    if (isManual) setRefreshing(true);
+    try {
+      const res = await axios.get('/api/dashboard/analytics');
+      setData(res.data);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error('Error cargando analytics:', err);
+    } finally {
+      setLoading(false);
+      if (isManual) setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const response = await axios.get(`${API_URL}/stats`);
-        setStats(response.data);
-      } catch (error) {
-        console.error('Error al cargar estadísticas:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchStats();
-    const interval = setInterval(fetchStats, 30000);
+    fetchData();
+    const interval = setInterval(() => fetchData(), 60000); // cada 60 s
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchData]);
 
   if (loading) return (
     <div className="flex items-center justify-center h-[80vh]">
       <div className="relative w-24 h-24">
-        <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
-        <div className="absolute inset-0 border-4 border-t-blue-500 rounded-full animate-spin"></div>
+        <div className="absolute inset-0 border-4 border-blue-500/20 rounded-full" />
+        <div className="absolute inset-0 border-4 border-t-blue-500 rounded-full animate-spin" />
       </div>
     </div>
   );
 
-  const totalSales = (stats?.salesByHour || []).reduce((a, b) => a + (b || 0), 0);
+  const { dailySales = [], topProducts = [], categoryData = [], paymentMethods = [], overview = {}, criticalStock = [] } = data || {};
+
+  // KPIs de la semana
+  const weekRevenue = dailySales.reduce((s, d) => s + d.revenue, 0);
+  const weekTxs = dailySales.reduce((s, d) => s + d.count, 0);
+  const cancelRate = overview.totalSales > 0 ? ((overview.cancelledSales / (overview.totalSales + overview.cancelledSales)) * 100).toFixed(1) : 0;
+  const avgTicket = weekTxs > 0 ? weekRevenue / weekTxs : 0;
+
+  // Días de la semana formateados
+  const DAYS_ES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const chartData = dailySales.map(d => ({
+    ...d,
+    label: DAYS_ES[new Date(d.date + 'T12:00:00').getDay()]
+  }));
 
   return (
     <div className="space-y-10 pb-20">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      {/* Header */}
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <motion.h1 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
+          <motion.h1
+            initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
             className="text-5xl font-black text-white tracking-tighter"
           >
-            PANEL <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 to-emerald-400">ESTRATÉGICO</span>
+            ANALYTICS <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 to-emerald-400">360°</span>
           </motion.h1>
-          <p className="text-slate-500 font-medium mt-2">Monitoreo de rendimiento en tiempo real para tu pulpería</p>
+          <p className="text-slate-500 font-medium mt-1">
+            Inteligencia de negocio · últimos 7 días
+            {lastUpdated && <span className="ml-2 text-slate-600 text-xs">· Act. {lastUpdated.toLocaleTimeString('es-NI', { hour: '2-digit', minute: '2-digit' })}</span>}
+          </p>
         </div>
-        <div className="flex items-center gap-3 bg-slate-900/50 p-2 rounded-2xl border border-slate-800/50">
-           <div className="w-3 h-3 bg-emerald-500 rounded-full animate-pulse shadow-lg shadow-emerald-500/50"></div>
-           <span className="text-xs font-black text-emerald-500 uppercase tracking-widest px-2">Transmisión Activa</span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => fetchData(true)}
+            disabled={refreshing}
+            className="flex items-center gap-2 bg-slate-900 border border-slate-700 text-slate-300 hover:text-white px-4 py-2.5 rounded-2xl text-sm font-bold transition-all hover:border-blue-500/50 disabled:opacity-50"
+          >
+            <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
+            Actualizar
+          </button>
+          <div className="flex items-center gap-2 bg-slate-900/50 p-2 px-4 rounded-2xl border border-slate-800/50">
+            <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-lg shadow-emerald-500/50" />
+            <span className="text-xs font-black text-emerald-500 uppercase tracking-widest">En Vivo</span>
+          </div>
         </div>
       </header>
 
-      {/* Tarjetas de Impacto */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <ImpactCard 
-          label="Ingresos Hoy" 
-          value={`C$ ${totalSales.toLocaleString()}`}
-          icon={<DollarSign className="text-blue-400" />}
-          trend="+12.5%"
-          color="blue"
-        />
-        <ImpactCard 
-          label="Stock Crítico" 
-          value={stats?.lowStock || 0}
-          icon={<AlertTriangle className="text-rose-400" />}
-          trend="Atención"
-          color="rose"
-          isAlert={stats?.lowStock > 0}
-        />
-        <ImpactCard 
-          label="Productos" 
-          value={stats?.totalProducts || 0}
-          icon={<Package className="text-emerald-400" />}
-          trend="Total Base"
-          color="emerald"
-        />
-        <ImpactCard 
-          label="Gasto Eléctrico" 
-          value={stats?.appliancesCount || 0}
-          icon={<Zap className="text-amber-400" />}
-          trend="Equipos"
-          color="amber"
-        />
+      {/* KPI Cards — métricas únicas no disponibles en el central */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+        <KpiCard label="Ingresos Semana" value={fmtC(weekRevenue)} icon={<DollarSign size={20} className="text-blue-400" />} color="blue" sub="Últimos 7 días" up />
+        <KpiCard label="Ticket Promedio" value={fmtC(avgTicket)} icon={<Award size={20} className="text-amber-400" />} color="amber" sub={`${weekTxs} transacciones`} up />
+        <KpiCard label="Tasa Cancelación" value={`${cancelRate}%`} icon={<XCircle size={20} className="text-rose-400" />} color="rose" sub={`${overview.cancelledSales || 0} canceladas`} up={false} />
+        <KpiCard label="Sin Stock" value={overview.outOfStock || 0} icon={<Package size={20} className="text-purple-400" />} color="purple" sub={`${overview.lowStockCount || 0} en alerta`} up={false} />
       </div>
 
-      {/* Gráfica de Ventas - Estilo Crypto */}
-      <div className="bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 md:p-10 shadow-2xl">
-        <div className="flex justify-between items-center mb-10">
+      {/* Gráfica de tendencia — 7 días */}
+      <div className="bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 shadow-2xl">
+        <div className="flex justify-between items-start mb-8 flex-wrap gap-4">
           <div>
-            <h2 className="text-2xl font-black text-white">Flujo de Ventas</h2>
-            <p className="text-slate-500 text-sm">Actividad transaccional de las últimas 24 horas</p>
+            <h2 className="text-2xl font-black text-white">Tendencia de Ingresos</h2>
+            <p className="text-slate-500 text-sm mt-1">Ingresos diarios · últimos 7 días</p>
           </div>
-          <div className="flex gap-2">
-             <div className="bg-blue-500/10 text-blue-400 px-4 py-2 rounded-xl text-xs font-black border border-blue-500/20">HORA A HORA</div>
+          <div className="text-right">
+            <p className="text-3xl font-black text-white">{fmtC(weekRevenue)}</p>
+            <p className="text-slate-500 text-xs">Total de la semana</p>
           </div>
         </div>
-        <div className="h-[400px] w-full">
+        <div className="h-[320px]">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={(stats?.salesByHour || []).map((v, i) => ({ hora: `${i}:00`, ventas: v || 0 }))}>
+            <AreaChart data={chartData}>
               <defs>
-                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-              <XAxis dataKey="hora" stroke="#475569" fontSize={10} axisLine={false} tickLine={false} />
-              <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} tickFormatter={(v) => `C$${v}`} />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#000', border: '1px solid #1e293b', borderRadius: '16px' }}
-                itemStyle={{ color: '#3b82f6', fontWeight: 'bold' }}
+              <XAxis dataKey="label" stroke="#475569" fontSize={11} axisLine={false} tickLine={false} />
+              <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} tickFormatter={v => `C$${(v/1000).toFixed(0)}k`} />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1e293b', borderRadius: '16px', boxShadow: '0 25px 50px rgba(0,0,0,0.5)' }}
+                labelStyle={{ color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}
+                formatter={(v) => [fmtC(v), 'Ingresos']}
               />
-              <Area type="monotone" dataKey="ventas" stroke="#3b82f6" strokeWidth={4} fillOpacity={1} fill="url(#colorSales)" />
+              <Area type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#gradRevenue)" dot={{ fill: '#3b82f6', strokeWidth: 0, r: 4 }} activeDot={{ r: 6, fill: '#60a5fa' }} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Grid de Gráficas Secundarias */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Rentabilidad */}
-        <div className="bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 shadow-xl">
-          <h3 className="text-xl font-black text-white mb-8 flex items-center gap-3">
-            <TrendingUp className="text-emerald-400" />
-            Rentabilidad por Categoría
-          </h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats?.profitability || []}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="name" stroke="#475569" fontSize={10} axisLine={false} tickLine={false} />
-                <YAxis stroke="#475569" fontSize={10} axisLine={false} tickLine={false} />
-                <Tooltip 
-                  cursor={{fill: 'rgba(255,255,255,0.05)'}}
-                  contentStyle={{ backgroundColor: '#000', border: '1px solid #1e293b', borderRadius: '12px' }}
-                />
-                <Bar dataKey="value" fill="#10b981" radius={[10, 10, 0, 0]} barSize={40}>
-                  {(stats?.profitability || []).map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+      {/* Grid: Top Productos + Distribución por Categoría */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+        {/* Top Productos (Ranking) — 3 columnas */}
+        <div className="lg:col-span-3 bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 shadow-xl">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="bg-amber-500/10 p-3 rounded-2xl"><TrendingUp className="text-amber-400" size={20} /></div>
+            <div>
+              <h3 className="text-xl font-black text-white">Top 10 Productos</h3>
+              <p className="text-slate-500 text-xs mt-0.5">Ranking por ingreso generado (histórico)</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            {topProducts.length === 0 && <p className="text-slate-500 text-center py-8 italic">Sin datos de ventas aún</p>}
+            {topProducts.map((p, i) => (
+              <div key={p.name} className="flex items-center gap-4 group">
+                <span className={`text-xs font-black w-6 text-center shrink-0 ${i === 0 ? 'text-amber-400' : i === 1 ? 'text-slate-300' : i === 2 ? 'text-amber-700' : 'text-slate-600'}`}>
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-center mb-1.5">
+                    <span className="text-sm font-bold text-slate-200 truncate">{p.name}</span>
+                    <span className="text-xs text-emerald-400 font-black shrink-0 ml-2">{fmtC(p.revenue)}</span>
+                  </div>
+                  <div className="w-full bg-slate-900 rounded-full h-1.5">
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{
+                        width: `${(p.revenue / (topProducts[0]?.revenue || 1)) * 100}%`,
+                        background: `hsl(${210 + i * 15}, 80%, 60%)`
+                      }}
+                    />
+                  </div>
+                </div>
+                <span className="text-xs text-slate-600 w-12 text-right shrink-0">{p.units} u.</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Alerta de Stock Visual */}
-        <div className="bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 shadow-xl relative overflow-hidden">
-           <div className="relative z-10">
-              <h3 className="text-xl font-black text-white mb-6">Estado de Inventario</h3>
-              <div className="space-y-6">
-                 <div className="flex justify-between items-end">
-                    <div>
-                       <p className="text-slate-500 text-xs font-black uppercase tracking-widest">Salud de Stock</p>
-                       <p className="text-3xl font-black text-white mt-1">
-                          {Math.round(((stats?.totalProducts - stats?.lowStock) / stats?.totalProducts) * 100) || 0}%
-                       </p>
-                    </div>
-                    <div className="text-right">
-                       <p className="text-rose-500 text-xs font-bold uppercase tracking-widest">En Riesgo</p>
-                       <p className="text-xl font-black text-white">{stats?.lowStock || 0}</p>
-                    </div>
-                 </div>
-                 <div className="w-full bg-slate-900 rounded-full h-4 overflow-hidden border border-slate-800">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${Math.round(((stats?.totalProducts - stats?.lowStock) / stats?.totalProducts) * 100) || 0}%` }}
-                      className="bg-gradient-to-r from-blue-600 to-emerald-500 h-full"
+        {/* Pie Chart Categorías — 2 columnas */}
+        <div className="lg:col-span-2 bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 shadow-xl">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="bg-purple-500/10 p-3 rounded-2xl"><Activity className="text-purple-400" size={20} /></div>
+            <div>
+              <h3 className="text-xl font-black text-white">Por Categoría</h3>
+              <p className="text-slate-500 text-xs mt-0.5">Distribución de ventas</p>
+            </div>
+          </div>
+          {categoryData.length === 0 ? (
+            <div className="flex items-center justify-center h-48 text-slate-500 italic text-sm">Sin datos</div>
+          ) : (
+            <>
+              <div className="h-[200px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={categoryData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} dataKey="value" paddingAngle={3}>
+                      {categoryData.map((_, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1e293b', borderRadius: '12px' }}
+                      formatter={(v) => [fmtC(v), 'Ingresos']}
                     />
-                 </div>
-                 <p className="text-slate-500 text-xs leading-relaxed italic">
-                    *El porcentaje representa productos con más de 5 unidades disponibles.
-                 </p>
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-           </div>
-           <div className="absolute -right-10 -bottom-10 opacity-5">
-              <Package size={200} />
-           </div>
+              <div className="space-y-2 mt-4">
+                {categoryData.slice(0, 5).map((c, i) => (
+                  <div key={c.name} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                      <span className="text-xs text-slate-400 font-medium truncate max-w-[100px]">{c.name}</span>
+                    </div>
+                    <span className="text-xs font-black text-slate-300">{fmtC(c.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Métodos de Pago + Stock Alert Quick View */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Métodos de pago */}
+        <div className="bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 shadow-xl">
+          <div className="flex items-center gap-3 mb-8">
+            <div className="bg-emerald-500/10 p-3 rounded-2xl"><CreditCard className="text-emerald-400" size={20} /></div>
+            <div>
+              <h3 className="text-xl font-black text-white">Métodos de Pago</h3>
+              <p className="text-slate-500 text-xs mt-0.5">Distribución histórica por tipo</p>
+            </div>
+          </div>
+          {paymentMethods.length === 0 ? (
+            <p className="text-slate-500 text-center italic py-8">Sin datos</p>
+          ) : (
+            <div className="h-[220px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={paymentMethods} layout="vertical" margin={{ left: 0, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
+                  <XAxis type="number" stroke="#475569" fontSize={10} axisLine={false} tickLine={false} tickFormatter={v => `C$${(v/1000).toFixed(0)}k`} />
+                  <YAxis type="category" dataKey="name" stroke="#475569" fontSize={11} axisLine={false} tickLine={false} width={70} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #1e293b', borderRadius: '12px' }}
+                    formatter={(v) => [fmtC(v), 'Total']}
+                  />
+                  <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={28}>
+                    {paymentMethods.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+
+        {/* Stock Crítico - Quick View */}
+        <div className="bg-[#0a0a0a] border border-slate-800/50 rounded-[2.5rem] p-8 shadow-xl">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="bg-rose-500/10 p-3 rounded-2xl"><AlertTriangle className="text-rose-400" size={20} /></div>
+            <div>
+              <h3 className="text-xl font-black text-white">Alertas de Stock</h3>
+              <p className="text-slate-500 text-xs mt-0.5">Productos con ≤10 unidades — ver Predictor para detalles</p>
+            </div>
+          </div>
+          {criticalStock.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-40 gap-3">
+              <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl flex items-center justify-center">
+                <ShoppingBag className="text-emerald-400" size={24} />
+              </div>
+              <p className="text-emerald-400 font-black text-sm">¡Todo el inventario está saludable!</p>
+            </div>
+          ) : (
+            <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
+              {criticalStock.slice(0, 8).map(p => (
+                <div key={p.id} className={`flex items-center justify-between p-3 rounded-2xl border ${
+                  p.urgency === 'critical' ? 'bg-rose-500/5 border-rose-500/20' :
+                  p.urgency === 'warning' ? 'bg-amber-500/5 border-amber-500/20' :
+                  'bg-slate-800/30 border-slate-700/30'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-2 h-2 rounded-full ${
+                      p.urgency === 'critical' ? 'bg-rose-500 animate-pulse' :
+                      p.urgency === 'warning' ? 'bg-amber-500' : 'bg-slate-500'
+                    }`} />
+                    <span className="text-sm font-bold text-slate-200 truncate max-w-[140px]">{p.name}</span>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className={`text-xs font-black ${
+                      p.urgency === 'critical' ? 'text-rose-400' :
+                      p.urgency === 'warning' ? 'text-amber-400' : 'text-slate-400'
+                    }`}>{p.stock} uds</p>
+                    <p className="text-[10px] text-slate-600">
+                      {p.daysLeft >= 999 ? 'Sin consumo' : `~${p.daysLeft}d`}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
-const ImpactCard = ({ label, value, icon, trend, color, isAlert }) => (
-  <motion.div 
-    whileHover={{ y: -5 }}
-    className={`bg-[#0a0a0a] border ${isAlert ? 'border-rose-500/50 animate-pulse' : 'border-slate-800/50'} rounded-[2rem] p-7 shadow-xl group transition-all`}
-  >
-    <div className="flex justify-between items-start mb-6">
-      <div className={`p-4 bg-slate-900 rounded-2xl group-hover:scale-110 transition-transform duration-500`}>
+const KpiCard = ({ label, value, icon, color, sub, up }) => {
+  const colors = {
+    blue: { bg: 'bg-blue-500/10', border: 'border-blue-500/20', trend: 'bg-blue-500/10 text-blue-400' },
+    amber: { bg: 'bg-amber-500/10', border: 'border-amber-500/20', trend: 'bg-amber-500/10 text-amber-400' },
+    rose: { bg: 'bg-rose-500/10', border: 'border-rose-500/20', trend: 'bg-rose-500/10 text-rose-400' },
+    purple: { bg: 'bg-purple-500/10', border: 'border-purple-500/20', trend: 'bg-purple-500/10 text-purple-400' },
+  };
+  const c = colors[color] || colors.blue;
+  return (
+    <motion.div
+      whileHover={{ y: -4 }}
+      className={`bg-[#0a0a0a] border ${c.border} rounded-[2rem] p-6 shadow-xl`}
+    >
+      <div className={`w-12 h-12 ${c.bg} rounded-2xl flex items-center justify-center mb-5`}>
         {icon}
       </div>
-      <div className={`flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-lg ${color === 'rose' ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
-        {trend.includes('+') ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-        {trend}
+      <p className="text-slate-500 text-xs font-black uppercase tracking-widest mb-1">{label}</p>
+      <p className="text-3xl font-black text-white tracking-tight">{value}</p>
+      <div className={`inline-flex items-center gap-1 mt-3 text-[10px] font-black px-2 py-1 rounded-lg ${c.trend}`}>
+        {up ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}
+        {sub}
       </div>
-    </div>
-    <p className="text-slate-500 text-xs font-black uppercase tracking-[0.15em] mb-1">{label}</p>
-    <p className="text-3xl font-black text-white tracking-tighter">{value}</p>
-  </motion.div>
-);
+    </motion.div>
+  );
+};
 
 export default Dashboard;

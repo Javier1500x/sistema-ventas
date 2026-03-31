@@ -7,17 +7,17 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:frontend\" \"npm start --prefix backend\"",
     "dev:frontend": "vite --host",
-    "build": "vite build",
+    "build": "vite build && cd subsistema && npm install && npm run build",
+    "build:main": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "electron:dev": "cross-env NODE_ENV=development concurrently \"npm run dev:frontend\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build && electron-builder",
+    "electron:build": "npm run build:main && electron-builder",
     "tailwindcss-init": "tailwindcss init -p",
-    "android:build": "npm run build && npx cap sync android",
+    "android:build": "npm run build:main && npx cap sync android",
     "android:open": "npx cap open android",
     "start:backend": "node backend/server.js",
-    "start": "node backend/server.js",
-    "build": "vite build && cd subsistema && npm install && npm run build"
+    "start": "node backend/server.js"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",

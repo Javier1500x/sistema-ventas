@@ -572,6 +572,150 @@ app.get('/api/dashboard/products', async (req, res) => {
   }
 });
 
+// --- Endpoint público alternativo para fraccionamiento (usado por el subsistema dashboard) ---
+app.post('/api/dashboard/convert', async (req, res) => {
+  try {
+    const { parentId, childId, quantityToConvert } = req.body;
+    const allProds = await getAllProducts();
+    const parentProduct = allProds.find(p => p.id == parentId);
+    if (!parentProduct || parentProduct.stock < quantityToConvert) {
+      return res.status(400).json({ message: 'Stock insuficiente del producto original.' });
+    }
+    const childProduct = allProds.find(p => p.id == childId);
+    if (!childProduct) return res.status(400).json({ message: 'Producto destino no encontrado.' });
+    if (!childProduct.conversion_factor || childProduct.conversion_factor <= 0) {
+      return res.status(400).json({ message: 'El producto destino no tiene un factor de conversión configurado. Edítalo en el sistema central.' });
+    }
+    const unitsToAdd = quantityToConvert * childProduct.conversion_factor;
+    await updateProductStock(parentId, -quantityToConvert);
+    await updateProductStock(childId, unitsToAdd);
+    res.json({ success: true, message: `Conversión exitosa: ${quantityToConvert} unidad(es) → ${unitsToAdd} fracciones de "${childProduct.name}".` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- Panel de Pedidos del subsistema (público, solo lectura + update de estado) ---
+app.get('/api/dashboard/orders', async (req, res) => {
+  try {
+    const orders = await getPendingAutoOrders();
+    res.json(orders);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/dashboard/orders/:id/status', async (req, res) => {
+  try {
+    const { status, transactionId } = req.body;
+    const result = await updateAutoOrderStatus(req.params.id, status, transactionId || null);
+    if (result && result.public_id) {
+      io.emit(`orderStatusUpdate:${result.public_id}`, { status, transactionId });
+    }
+    io.emit(`orderStatusUpdate:${req.params.id}`, { status, transactionId });
+    io.emit('orderUpdate', result);
+    res.json({ message: 'Estado actualizado', ...result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- Analytics avanzado para el subsistema ---
+app.get('/api/dashboard/analytics', async (req, res) => {
+  try {
+    const [sales, products] = await Promise.all([getAllSales(), getAllProducts()]);
+
+    // Ventas por día (últimos 7 días)
+    const dailySales = {};
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().split('T')[0];
+      dailySales[key] = { date: key, revenue: 0, count: 0 };
+    }
+    sales.forEach(sale => {
+      const day = sale.date ? sale.date.split('T')[0] : null;
+      if (day && dailySales[day]) {
+        dailySales[day].revenue += sale.price * sale.quantity;
+        dailySales[day].count += 1;
+      }
+    });
+
+    // Top 10 productos más vendidos (por ingresos)
+    const productRevenue = {};
+    sales.forEach(sale => {
+      const key = sale.productName || sale.productId;
+      if (!productRevenue[key]) productRevenue[key] = { name: key, revenue: 0, units: 0 };
+      productRevenue[key].revenue += sale.price * sale.quantity;
+      productRevenue[key].units += sale.quantity;
+    });
+    const topProducts = Object.values(productRevenue)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10);
+
+    // Distribución de ventas por categoría (para Pie chart)
+    const categoryRevenue = {};
+    sales.forEach(sale => {
+      const prod = products.find(p => String(p.id) === String(sale.productId) || p.manual_code === sale.productId);
+      const cat = (prod && prod.category) ? prod.category : 'Sin categoría';
+      categoryRevenue[cat] = (categoryRevenue[cat] || 0) + (sale.price * sale.quantity);
+    });
+    const categoryData = Object.entries(categoryRevenue)
+      .map(([name, value]) => ({ name, value: Math.round(value) }))
+      .sort((a, b) => b.value - a.value);
+
+    // Ventas por método de pago
+    const paymentMethods = {};
+    sales.forEach(sale => {
+      const method = sale.paymentMethod || 'Desconocido';
+      paymentMethods[method] = (paymentMethods[method] || 0) + (sale.price * sale.quantity);
+    });
+
+    // Productos con stock crítico (menos de 10 unidades) con proyección
+    const criticalStock = products
+      .filter(p => p.stock <= 10)
+      .map(p => {
+        // Calcular promedio de ventas diarias de este producto
+        const prodSales = sales.filter(s => String(s.productId) === String(p.id) || p.manual_code === s.productId);
+        const totalUnits = prodSales.reduce((sum, s) => sum + s.quantity, 0);
+        const avgDailySales = totalUnits / 7; // últimos 7 días estimado
+        const daysLeft = avgDailySales > 0 ? Math.floor(p.stock / avgDailySales) : 999;
+        return {
+          id: p.id,
+          name: p.name,
+          stock: p.stock,
+          category: p.category,
+          avgDailySales: Math.round(avgDailySales * 10) / 10,
+          daysLeft: Math.min(daysLeft, 999),
+          urgency: daysLeft <= 2 ? 'critical' : daysLeft <= 5 ? 'warning' : 'low'
+        };
+      })
+      .sort((a, b) => a.daysLeft - b.daysLeft);
+
+    // Tasa de conversión de métodos de pago
+    const totalSalesCount = sales.filter(s => s.status !== 'cancelled').length;
+    const cancelledCount = sales.filter(s => s.status === 'cancelled').length;
+
+    res.json({
+      dailySales: Object.values(dailySales),
+      topProducts,
+      categoryData,
+      paymentMethods: Object.entries(paymentMethods).map(([name, value]) => ({ name, value: Math.round(value) })),
+      criticalStock,
+      overview: {
+        totalSales: totalSalesCount,
+        cancelledSales: cancelledCount,
+        totalProducts: products.length,
+        lowStockCount: products.filter(p => p.stock <= 5).length,
+        outOfStock: products.filter(p => p.stock <= 0).length
+      }
+    });
+  } catch (error) {
+    console.error('Error en analytics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // --- Fraccionamiento (Idea 4) ---
 app.post('/api/products/convert', authenticateToken, authorizeRole('admin'), async (req, res) => {
   try {
