@@ -52,6 +52,10 @@ const {
   createAppliance,
   updateAppliance,
   deleteAppliance,
+  getAllBills,
+  createBill,
+  updateBillStatus,
+  deleteBill,
   getDashboardTotals
 } = require('./database');
 const { getDailySummary, getSalesChartData, getComboSuggestions, getStockPredictor } = require('./decisionEngine');

@@ -152,6 +152,19 @@ const initDb = async () => {
       hours_per_day REAL DEFAULT 24,
       kwh_cost REAL NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS bills (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL, -- 'Luz', 'Agua', 'Internet'
+      amount REAL NOT NULL,
+      billing_month TEXT NOT NULL,
+      billing_year INTEGER NOT NULL,
+      due_date TEXT NOT NULL, -- ISO YYYY-MM-DD
+      status TEXT DEFAULT 'pending', -- 'pending', 'paid'
+      image TEXT, -- Base64
+      notes TEXT,
+      created_at TEXT
+    );
   `);
 
   // Insertar offset de tiempo por defecto si no existe
