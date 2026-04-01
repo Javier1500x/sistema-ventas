@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Scissors, ArrowRight, Package, Info, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
+import { io } from 'socket.io-client';
 
 const Fraccionamiento = () => {
   const [products, setProducts] = useState([]);
@@ -19,18 +20,16 @@ const Fraccionamiento = () => {
   };
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const res = await axios.get('/api/dashboard/products');
-        setProducts(res.data);
-      } catch (err) {
-        console.error('Error fetching products');
-      } finally {
-        setFetching(false);
-      }
-    };
     fetchProducts();
-  }, []);
+    
+    const socket = io();
+    socket.on('dashboardUpdate', (data) => {
+      console.log('Stock update received:', data.type);
+      fetchProducts();
+    });
+
+    return () => socket.disconnect();
+  }, [fetchProducts]);
 
   const handleConvert = async (e) => {
     e.preventDefault();

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
+import { io } from 'socket.io-client';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
 
@@ -38,8 +39,19 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(() => fetchData(), 60000); // cada 60 s
-    return () => clearInterval(interval);
+    
+    // Configurar Socket para tiempo real
+    const socket = io();
+    socket.on('dashboardUpdate', (data) => {
+      console.log('Real-time update received:', data.type);
+      fetchData(); // Recargar todo el set de analytics al haber cualquier cambio
+    });
+
+    const interval = setInterval(() => fetchData(), 60000 * 5); // Polling de seguridad cada 5 min
+    return () => {
+      socket.disconnect();
+      clearInterval(interval);
+    };
   }, [fetchData]);
 
   if (loading) return (

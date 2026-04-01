@@ -265,6 +265,7 @@ app.post('/api/products', authenticateToken, authorizeRole('admin'), async (req,
 app.put('/api/products/:id', authenticateToken, authorizeRole('admin'), async (req, res) => {
   try {
     const updatedProduct = await updateProduct(req.params.id, req.body);
+    io.emit('dashboardUpdate', { type: 'product_updated' });
     res.status(200).json({ message: 'Producto actualizado con éxito.', product: updatedProduct });
   } catch (error) {
     console.error('Error al actualizar producto:', error);
@@ -278,6 +279,7 @@ app.delete('/api/products/:id', authenticateToken, authorizeRole('admin'), async
     if (result.changes === 0) {
       return res.status(404).json({ message: 'Producto no encontrado.' });
     }
+    io.emit('dashboardUpdate', { type: 'product_deleted' });
     res.status(200).json({ message: 'Producto eliminado con éxito.' });
   } catch (error) {
     console.error('Error al eliminar producto:', error);
@@ -326,6 +328,7 @@ app.post('/api/record-sale', async (req, res) => {
       console.error('Failed to process low stock notification:', notifyError);
     }
 
+    io.emit('dashboardUpdate', { type: 'sale', transactionId });
     res.status(201).json({ message: 'Venta registrada con éxito', saleId: result.id, transactionId: result.transactionId });
   } catch (error) {
     res.status(500).json({ message: 'Error en el servidor al registrar la venta', error });
@@ -360,6 +363,7 @@ app.post('/api/cancel-sale/:transactionId', async (req, res) => {
     }
 
     await cancelSaleByTransactionId(transactionId);
+    io.emit('dashboardUpdate', { type: 'sale_cancelled', transactionId });
     res.status(200).json({ message: 'Venta cancelada con éxito y stock devuelto.' });
   } catch (error) {
     console.error('Error al cancelar la venta:', error);
@@ -381,6 +385,7 @@ app.post('/api/cash-transactions', async (req, res) => {
     const { amount, description, type } = req.body;
     const date = getUTCDateISO();
     await addCashTransaction(amount, description, type, date);
+    io.emit('dashboardUpdate', { type: 'cash_transaction' });
     res.status(201).json({ message: 'Transacción de caja registrada con éxito.' });
   } catch (error) {
     res.status(500).json({ message: 'Error al registrar transacción de caja.' });
@@ -426,6 +431,7 @@ app.delete('/api/suppliers/:id', async (req, res) => {
 app.post('/api/purchases', async (req, res) => {
   try {
     const purchaseId = await recordPurchase(req.body);
+    io.emit('dashboardUpdate', { type: 'purchase_recorded' });
     res.status(201).json({ id: purchaseId, message: 'Compra registrada con éxito y stock actualizado.' });
   } catch (error) {
     res.status(500).json({ message: 'Error al registrar compra.' });
@@ -455,6 +461,7 @@ app.post('/api/cash-closings', async (req, res) => {
       await markSalesAsClosed(req.body.date);
     }
 
+    io.emit('dashboardUpdate', { type: 'cash_closing' });
     res.json({ message: 'Cierre de caja guardado con éxito.' });
   } catch (error) {
     console.error('ERROR EN CIERRE DE CAJA:', error);
@@ -475,6 +482,7 @@ app.get('/api/combos', async (req, res) => {
 app.post('/api/combos', async (req, res) => {
   try {
     const combo = await createCombo(req.body);
+    io.emit('dashboardUpdate', { type: 'combo_created' });
     res.json(combo);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -484,6 +492,7 @@ app.post('/api/combos', async (req, res) => {
 app.delete('/api/combos/:id', async (req, res) => {
   try {
     await deleteCombo(req.params.id);
+    io.emit('dashboardUpdate', { type: 'combo_deleted' });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -503,6 +512,7 @@ app.get('/api/appliances', async (req, res) => {
 app.post('/api/appliances', async (req, res) => {
   try {
     const appliance = await createAppliance(req.body);
+    io.emit('dashboardUpdate', { type: 'appliance_created' });
     res.json(appliance);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -512,6 +522,7 @@ app.post('/api/appliances', async (req, res) => {
 app.put('/api/appliances/:id', async (req, res) => {
   try {
     const appliance = await updateAppliance(req.params.id, req.body);
+    io.emit('dashboardUpdate', { type: 'appliance_updated' });
     res.json(appliance);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -521,6 +532,7 @@ app.put('/api/appliances/:id', async (req, res) => {
 app.delete('/api/appliances/:id', async (req, res) => {
   try {
     await deleteAppliance(req.params.id);
+    io.emit('dashboardUpdate', { type: 'appliance_deleted' });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -593,6 +605,7 @@ app.post('/api/dashboard/convert', async (req, res) => {
     const unitsToAdd = quantityToConvert * childProduct.conversion_factor;
     await updateProductStock(parentId, -quantityToConvert);
     await updateProductStock(childId, unitsToAdd);
+    io.emit('dashboardUpdate', { type: 'stock_conversion' });
     res.json({ success: true, message: `Conversión exitosa: ${quantityToConvert} unidad(es) → ${unitsToAdd} fracciones de "${childProduct.name}".` });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -618,6 +631,7 @@ app.put('/api/dashboard/orders/:id/status', async (req, res) => {
     }
     io.emit(`orderStatusUpdate:${req.params.id}`, { status, transactionId });
     io.emit('orderUpdate', result);
+    io.emit('dashboardUpdate', { type: 'order_status_updated' });
     res.json({ message: 'Estado actualizado', ...result });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -759,25 +773,35 @@ app.get('/api/dashboard/analytics', async (req, res) => {
 });
 
 // --- Fraccionamiento (Idea 4) ---
-app.post('/api/products/convert', authenticateToken, authorizeRole('admin'), async (req, res) => {
+// Alias para compatibilidad con frontend
+app.post(['/api/products/convert', '/api/dashboard/convert'], authenticateToken, authorizeRole('admin'), async (req, res) => {
   try {
     const { parentId, childId, quantityToConvert } = req.body;
+    console.log('--- NUEVA CONVERSIÓN ---', { parentId, childId, quantityToConvert });
+    
     // Ejemplo: Convertir 1 Saco (parentId) en 100 Libras (childId)
-    const parentProduct = (await getAllProducts()).find(p => p.id == parentId);
-    if (!parentProduct || parentProduct.stock < quantityToConvert) {
-      return res.status(400).json({ message: 'Stock insuficiente del producto original.' });
+    const products = await getAllProducts();
+    const parentProduct = products.find(p => p.id == parentId);
+    if (!parentProduct) return res.status(400).json({ message: 'Producto origen no encontrado.' });
+    
+    if (parentProduct.stock < quantityToConvert) {
+      return res.status(400).json({ message: `Stock insuficiente. Disponible: ${parentProduct.stock}` });
     }
 
-    const childProduct = (await getAllProducts()).find(p => p.id == childId);
+    const childProduct = products.find(p => p.id == childId);
     if (!childProduct) return res.status(400).json({ message: 'Producto destino no encontrado.' });
 
-    const unitsToAdd = quantityToConvert * childProduct.conversion_factor;
+    const factor = childProduct.conversion_factor || 1;
+    const unitsToAdd = quantityToConvert * factor;
 
     await updateProductStock(parentId, -quantityToConvert);
     await updateProductStock(childId, unitsToAdd);
 
+    io.emit('dashboardUpdate', { type: 'stock_conversion' });
+
     res.json({ success: true, message: `Se convirtieron ${quantityToConvert} unidades en ${unitsToAdd} fracciones.` });
   } catch (error) {
+    console.error('Error en conversión:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -794,10 +818,13 @@ app.get('/api/dashboard/bills', async (req, res) => {
 
 app.post('/api/dashboard/bills', async (req, res) => {
   try {
+    console.log('--- REGISTRANDO FACTURA ---', { type: req.body.type, amount: req.body.amount });
     const bill = await createBill(req.body);
+    io.emit('dashboardUpdate', { type: 'bill_created' });
     res.json(bill);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('ERROR AL CREAR FACTURA:', error);
+    res.status(500).json({ error: error.message, detail: 'Revise si la imagen es demasiado grande o faltan campos obligatorios' });
   }
 });
 
@@ -805,6 +832,7 @@ app.put('/api/dashboard/bills/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
     const result = await updateBillStatus(req.params.id, status);
+    io.emit('dashboardUpdate', { type: 'bill_status_updated' });
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -814,6 +842,7 @@ app.put('/api/dashboard/bills/:id/status', async (req, res) => {
 app.delete('/api/dashboard/bills/:id', async (req, res) => {
   try {
     const result = await deleteBill(req.params.id);
+    io.emit('dashboardUpdate', { type: 'bill_deleted' });
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });

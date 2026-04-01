@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
+import { io } from 'socket.io-client';
 
 const STATUS_CONFIG = {
   pending: { label: 'Pendiente', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30', dot: 'bg-amber-500 animate-pulse' },
@@ -55,8 +56,21 @@ const LiveOrders = () => {
 
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(fetchOrders, 15000); // cada 15 s — más agresivo para pedidos
-    return () => clearInterval(interval);
+    
+    // Configurar Socket para tiempo real
+    const socket = io();
+    socket.on('dashboardUpdate', (data) => {
+      // Recargar si el cambio afecta a los pedidos
+      if (['order_status_updated', 'sale', 'new_order'].includes(data.type)) {
+        fetchOrders();
+      }
+    });
+
+    const interval = setInterval(fetchOrders, 60000); // Polling de seguridad fallback cada 60s
+    return () => {
+      socket.disconnect();
+      clearInterval(interval);
+    };
   }, [fetchOrders]);
 
   const updateStatus = async (orderId, newStatus) => {
