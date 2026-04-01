@@ -7,9 +7,10 @@ import StockPredictor from './components/StockPredictor';
 import LiveOrders from './components/LiveOrders';
 import ProfitAnalysis from './components/ProfitAnalysis';
 import CustomerInsights from './components/CustomerInsights';
+import BillManager from './components/BillManager';
 import {
   LayoutDashboard, Scissors, Zap, Menu, X, ShoppingBag,
-  TrendingUp, ShoppingCart, BarChart3, Package, Users
+  TrendingUp, ShoppingCart, BarChart3, Package, Users, Receipt
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
@@ -18,18 +19,34 @@ function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
+  const [upcomingBillsCount, setUpcomingBillsCount] = useState(0);
 
   // Poll pending orders count for badge
   useEffect(() => {
-    const fetchPending = async () => {
+    const fetchStats = async () => {
       try {
-        const res = await axios.get('/api/dashboard/orders');
-        const pending = (res.data || []).filter(o => o.status === 'pending').length;
+        const [resOrders, resBills] = await Promise.all([
+          axios.get('/api/dashboard/orders'),
+          axios.get('/api/dashboard/bills')
+        ]);
+        
+        // Orders
+        const pending = (resOrders.data || []).filter(o => o.status === 'pending').length;
         setPendingOrdersCount(pending);
+
+        // Bills (Due within 3 days)
+        const today = new Date();
+        const upcoming = (resBills.data || []).filter(b => {
+          if (b.status === 'paid') return false;
+          const due = new Date(b.due_date);
+          const diff = (due - today) / (1000 * 60 * 60 * 24);
+          return diff >= -0.5 && diff <= 3;
+        }).length;
+        setUpcomingBillsCount(upcoming);
       } catch (_) {}
     };
-    fetchPending();
-    const iv = setInterval(fetchPending, 20000);
+    fetchStats();
+    const iv = setInterval(fetchStats, 20000);
     return () => clearInterval(iv);
   }, []);
 
@@ -85,6 +102,14 @@ function App() {
       desc: 'Saco → unidades'
     },
     {
+      id: 'bills',
+      label: 'Facturas',
+      icon: <Receipt size={18} />,
+      color: 'emerald-dark',
+      desc: 'Servicios básicos',
+      badge: upcomingBillsCount > 0 ? upcomingBillsCount : null
+    },
+    {
       id: 'efficiency',
       label: 'Energía',
       icon: <Zap size={18} />,
@@ -102,6 +127,7 @@ function App() {
     pink: 'text-pink-400',
     orange: 'text-orange-400',
     rose: 'text-rose-400',
+    'emerald-dark': 'text-emerald-500',
   };
 
   const BADGE_MAP = {
@@ -113,6 +139,7 @@ function App() {
     pink: 'bg-pink-500',
     orange: 'bg-orange-500',
     rose: 'bg-rose-500',
+    'emerald-dark': 'bg-rose-600 animate-pulse',
   };
 
   return (
@@ -256,6 +283,7 @@ function App() {
             {activeTab === 'stock' && <StockPredictor />}
             {activeTab === 'profit' && <ProfitAnalysis />}
             {activeTab === 'loyalty' && <CustomerInsights />}
+            {activeTab === 'bills' && <BillManager />}
             {activeTab === 'combos' && <ComboCreator />}
             {activeTab === 'fraccionamiento' && <Fraccionamiento />}
             {activeTab === 'efficiency' && <EfficiencyCalculator />}

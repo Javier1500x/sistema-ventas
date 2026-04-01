@@ -778,6 +778,44 @@ app.post('/api/products/convert', authenticateToken, authorizeRole('admin'), asy
   }
 });
 
+// --- Bills (Idea 11) ---
+app.get('/api/dashboard/bills', async (req, res) => {
+  try {
+    const bills = await getAllBills();
+    res.json(bills);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/dashboard/bills', async (req, res) => {
+  try {
+    const bill = await createBill(req.body);
+    res.json(bill);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/dashboard/bills/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const result = await updateBillStatus(req.params.id, status);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/dashboard/bills/:id', async (req, res) => {
+  try {
+    const result = await deleteBill(req.params.id);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/settings', async (req, res) => {
   try {
     const time_offset = await getSetting('time_offset');

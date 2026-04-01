@@ -642,6 +642,27 @@ const deleteAppliance = async (id) => {
   return { changes: result.rowsAffected };
 };
 
+// --- Bills (Idea 11) ---
+const getAllBills = async () => query('SELECT * FROM bills ORDER BY due_date DESC', []);
+
+const createBill = async ({ type, amount, billing_month, billing_year, due_date, status, image, notes }) => {
+  const result = await run(
+    'INSERT INTO bills (type, amount, billing_month, billing_year, due_date, status, image, notes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [type, amount, billing_month, billing_year, due_date, status || 'pending', image, notes, new Date().toISOString()]
+  );
+  return { id: Number(result.lastInsertRowid), type, amount, billing_month, billing_year, due_date, status, notes };
+};
+
+const updateBillStatus = async (id, status) => {
+  const result = await run('UPDATE bills SET status = ? WHERE id = ?', [status, id]);
+  return { id, status, changes: result.rowsAffected };
+};
+
+const deleteBill = async (id) => {
+  const result = await run('DELETE FROM bills WHERE id = ?', [id]);
+  return { id, changes: result.rowsAffected };
+};
+
 // --- Estadísticas para el Dashboard ---
 const getDashboardTotals = async () => {
   const products = await query('SELECT COUNT(*) as total, SUM(CASE WHEN stock <= 5 THEN 1 ELSE 0 END) as lowStock FROM products');
@@ -701,5 +722,9 @@ module.exports = {
   createAppliance,
   updateAppliance,
   deleteAppliance,
+  getAllBills,
+  createBill,
+  updateBillStatus,
+  deleteBill,
   getDashboardTotals
 };
