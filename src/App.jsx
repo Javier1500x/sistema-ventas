@@ -61,7 +61,7 @@ import BarcodeScanner from './components/BarcodeScanner.jsx';
 import { QRCodeCanvas } from 'qrcode.react';
 import CustomerCatalog from './components/CustomerCatalog.jsx';
 import { io } from 'socket.io-client';
-import { initializeFrontendMonitor } from './analitica/monitor.js'; // NUEVA LÍNEA
+import { initializeFrontendMonitor } from '../analitica/monitor.js'; // NUEVA LÍNEA
 
 // --- MOCK DATA & UTILS ---
 // En un entorno real, esto se reemplaza por llamadas a la API (fetch/axios).
