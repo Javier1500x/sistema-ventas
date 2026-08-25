@@ -1186,7 +1186,7 @@ export default function App() {
         </div>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-hidden flex flex-col">
+        <main className="flex-1 overflow-hidden flex flex-col min-w-0">
           {/* Header / Topbar - Removed as it's now global above */}
 
           {/* Notification Toast */}
@@ -1200,7 +1200,7 @@ export default function App() {
             </div>
           )}
 
-          <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-violet-100">
+          <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 lg:p-8 bg-violet-100 w-full">
             {view === 'dashboard' && (user.role === 'admin' || user.role === 'inventory_manager') && (
               <DashboardView
                 products={products}
@@ -3457,7 +3457,7 @@ const CashClosingView = ({ timeOffset, user }) => {
   const isClosed = data.status === 'closed';
 
   return (
-    <div className="max-w-4xl mx-auto animate-in fade-in">
+    <div className="animate-in fade-in">
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
         <div className="bg-violet-600 p-8 text-white">
           <div className="flex justify-between items-center mb-2">
