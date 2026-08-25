@@ -8,7 +8,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs'); // Usar bcryptjs para evitar errores de módulos nativos en Electron
-const logAnalytics = require('../analitica/middleware'); // NUEVA LÍNEA
+const logAnalytics = require('../analitica/middleware.cjs'); // NUEVA LÍNEA
 const {
   initDb,
   insertSale,
