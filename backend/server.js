@@ -8,6 +8,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs'); // Usar bcryptjs para evitar errores de módulos nativos en Electron
+const logAnalytics = require('./analitica/middleware'); // NUEVA LÍNEA
 const {
   initDb,
   insertSale,
@@ -92,6 +93,9 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-user-role']
 }));
+
+// Aplicar middleware de analíticas a todas las solicitudes
+app.use(logAnalytics); // NUEVA LÍNEA
 
 console.log('--- INICIANDO SERVIDOR SISTEMA DE VENTAS V2.2 (DEBUG MODE) ---');
 console.log('Current working directory:', process.cwd());
