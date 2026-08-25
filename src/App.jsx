@@ -50,7 +50,11 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  LineChart,
+  Line,
+  AreaChart,
+  Area
 } from 'recharts';
 import logoImage from '/Gemini_Generated_Image_tlsnlhtlsnlhtlsn.png?url'; // Import the logo image URL
 import BarcodeScanner from './components/BarcodeScanner.jsx';
@@ -206,7 +210,7 @@ const playNotificationSound = () => {
  */
 export default function App() {
   // --- CLIENT ROUTING ---
-  const [isCustomerMode, setIsCustomerMode] = useState(window.location.hash.includes('#catalog') || window.location.hash.includes('#receipt'));
+  const [isCustomerMode, setIsCustomerMode] = useState(isCapacitor || window.location.hash.includes('#catalog') || window.location.hash.includes('#receipt'));
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -217,8 +221,35 @@ export default function App() {
   }, []);
 
   // --- ESTADO GLOBAL ---
-  const [user, setUser] = useState(null); // { name, role, token }
-  const [view, setView] = useState('login'); // login, dashboard, pos, inventory, history
+  const [user, setUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('auth_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.token) {
+          const payload = JSON.parse(atob(parsed.token.split('.')[1]));
+          if (payload.exp * 1000 > Date.now()) return parsed;
+          localStorage.removeItem('auth_user');
+        }
+      }
+    } catch (e) { localStorage.removeItem('auth_user'); }
+    return null;
+  });
+  const [view, setView] = useState(() => {
+    try {
+      const saved = localStorage.getItem('auth_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.token) {
+          const payload = JSON.parse(atob(parsed.token.split('.')[1]));
+          if (payload.exp * 1000 > Date.now()) {
+            return parsed.role === 'seller' ? 'pos' : 'dashboard';
+          }
+        }
+      }
+    } catch (e) {}
+    return 'login';
+  });
   const [currentAutoOrderId, setCurrentAutoOrderId] = useState(null);
   const [products, setProducts] = usePersistentState('products', INITIAL_PRODUCTS);
   const [sales, setSales] = usePersistentState('sales', []);
@@ -473,11 +504,11 @@ export default function App() {
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [currentReceiptData, setCurrentReceiptData] = useState(null);
   const [storeInfo] = useState({
-    name: "Empresa",
-    address: ["B° Camilo Ortega", "frente al costado oeste de la iglesia católica"],
-    city: "Managua, Nicaragua",
-    phone: "Telf: 2222-5555",
-    footer: "¡Gracias por su compra!",
+    name: localStorage.getItem('business_name') || "Empresa",
+    address: [(localStorage.getItem('business_address') || "B° Camilo Ortega, frente al costado oeste de la iglesia católica")],
+    city: localStorage.getItem('business_city') || "Managua, Nicaragua",
+    phone: "Telf: " + (localStorage.getItem('business_phone') || "2222-5555"),
+    footer: localStorage.getItem('business_footer') || "¡Gracias por su compra!",
   });
 
 
@@ -485,6 +516,23 @@ export default function App() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const [hasWelcomed, setHasWelcomed] = useState(false);
+
+  // --- Token expiration check ---
+  useEffect(() => {
+    if (!user || !user.token) return;
+    const check = () => {
+      try {
+        const payload = JSON.parse(atob(user.token.split('.')[1]));
+        if (payload.exp * 1000 <= Date.now()) {
+          handleLogout();
+          showNotification('Sesión expirada. Por favor, inicie sesión de nuevo.', 'error');
+        }
+      } catch (e) { handleLogout(); }
+    };
+    check();
+    const interval = setInterval(check, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   // --- Efecto para Bienvenida por Voz y Notificación simulada ---
   useEffect(() => {
@@ -712,7 +760,9 @@ export default function App() {
       }
 
       const { token, user: userData } = await response.json();
-      setUser({ ...userData, token }); // Set user with data from backend (including role and token)
+      const userObj = { ...userData, token };
+      setUser(userObj);
+      localStorage.setItem('auth_user', JSON.stringify(userObj));
 
       // Navigate based on role
       if (userData.role === 'admin' || userData.role === 'inventory_manager') {
@@ -720,7 +770,7 @@ export default function App() {
       } else if (userData.role === 'seller') {
         setView('pos');
       } else {
-        setView('dashboard'); // Default fallback
+        setView('dashboard');
       }
 
       showNotification(`Bienvenido, ${userData.name}!`);
@@ -735,7 +785,8 @@ export default function App() {
     setUser(null);
     setView('login');
     setCart([]);
-    setSales([]); // Limpiar ventas al cerrar sesión
+    setSales([]);
+    localStorage.removeItem('auth_user');
   };
 
   // --- LÓGICA DE VENTAS (POS) ---
@@ -1203,13 +1254,17 @@ export default function App() {
             )}
             {view === 'cash-closing' && (user.role === 'admin' || user.role === 'seller') && <CashClosingView timeOffset={timeOffset} user={user} />}
             {view === 'cash_flow' && (user.role === 'admin' || user.role === 'inventory_manager') && <CashFlow timeOffset={timeOffset} user={user} />}
-            {view === 'users' && user.role === 'admin' && <UserManagementView showNotification={showNotification} userRole={user.role} />}
+            {view === 'users' && user.role === 'admin' && <UserManagementView showNotification={showNotification} userRole={user.role} userToken={user.token} />}
             {view === 'settings' && user.role === 'admin' && (
               <SettingsView
                 timeOffset={timeOffset}
                 notificationPhone={notificationPhone}
                 callmebotApiKey={callmebotApiKey}
                 onUpdateSettings={updateSettings}
+                isShopOpen={isShopOpen}
+                setIsShopOpen={setIsShopOpen}
+                estimatedPrepTime={estimatedPrepTime}
+                setEstimatedPrepTime={setEstimatedPrepTime}
               />
             )}
             {showPdfPreview && (
@@ -1816,7 +1871,24 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
     }
   }, [user]);
 
-  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ff6b6b', '#c44dff'];
+
+  const inventoryByCategory = useMemo(() => {
+    const catMap = {};
+    products.forEach(p => {
+      const cat = p.category || 'Sin categoría';
+      catMap[cat] = (catMap[cat] || 0) + p.stock;
+    });
+    return Object.entries(catMap).map(([name, stock]) => ({ name, stock }));
+  }, [products]);
+
+  const topProductsByValue = useMemo(() => {
+    return [...products].sort((a, b) => (b.price * b.stock) - (a.price * a.stock)).slice(0, 6).map(p => ({
+      name: p.name.length > 15 ? p.name.substring(0, 15) + '...' : p.name,
+      valor: p.price * p.stock,
+      stock: p.stock
+    }));
+  }, [products]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -1850,9 +1922,9 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
       {/* Resumen Diario */}
       <DailySummary refreshKey={refreshKey} user={user} />
 
-      {/* Gráficos */}
+      {/* Gráficos principales */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Gráfico de Tendencia de Ventas (Últimos 7 días) */}
+        {/* Tendencia de Ventas (7 días) - Area Chart */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-[400px]">
           <h3 className="text-lg font-bold text-slate-700 mb-6 flex items-center gap-2">
             <TrendingUp size={20} className="text-violet-500" /> Tendencia de Ventas (7 días)
@@ -1862,7 +1934,13 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
               <div className="h-full flex items-center justify-center text-slate-400">Cargando datos...</div>
             ) : (
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                <BarChart data={chartData.salesTrend}>
+                <AreaChart data={chartData.salesTrend}>
+                  <defs>
+                    <linearGradient id="colorVentas" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="date" tickFormatter={(str) => {
                     const d = new Date(str + 'T00:00:00');
@@ -1873,14 +1951,14 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
                     const d = new Date(label + 'T00:00:00');
                     return d.toLocaleDateString();
                   }} formatter={(value) => formatCurrency(value)} />
-                  <Bar dataKey="total" fill="#6366f1" radius={[4, 4, 0, 0]} name="Ventas" />
-                </BarChart>
+                  <Area type="monotone" dataKey="total" stroke="#6366f1" fill="url(#colorVentas)" strokeWidth={3} name="Ventas" />
+                </AreaChart>
               </ResponsiveContainer>
             )}
           </div>
         </div>
 
-        {/* Gráfico de Ventas por Categoría */}
+        {/* Distribución por Categoría - Pie Chart */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-[400px]">
           <h3 className="text-lg font-bold text-slate-700 mb-6 flex items-center gap-2">
             <Package size={20} className="text-violet-500" /> Distribución por Categoría
@@ -1888,6 +1966,8 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
           <div className="flex-1 w-full">
             {isLoading ? (
               <div className="h-full flex items-center justify-center text-slate-400">Cargando datos...</div>
+            ) : chartData.salesByCategory.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-slate-400">Sin datos de ventas aún</div>
             ) : (
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <PieChart>
@@ -1909,6 +1989,53 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
                   <Tooltip formatter={(value) => formatCurrency(value)} />
                   <Legend />
                 </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Segunda fila de gráficos */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Inventario por Categoría - BarChart horizontal */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-[350px]">
+          <h3 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
+            <Package size={20} className="text-blue-500" /> Inventario por Categoría
+          </h3>
+          <div className="flex-1 w-full">
+            {inventoryByCategory.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-slate-400">Sin inventario</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <BarChart data={inventoryByCategory} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" />
+                  <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="stock" fill="#3b82f6" radius={[0, 4, 4, 0]} name="Unidades" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Top Productos por Valor - BarChart */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col h-[350px]">
+          <h3 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
+            <DollarSign size={20} className="text-emerald-500" /> Top Productos por Valor en Inventario
+          </h3>
+          <div className="flex-1 w-full">
+            {topProductsByValue.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-slate-400">Sin productos</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <BarChart data={topProductsByValue}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                  <YAxis />
+                  <Tooltip formatter={(value) => formatCurrency(value)} />
+                  <Bar dataKey="valor" fill="#10b981" radius={[4, 4, 0, 0]} name="Valor" />
+                </BarChart>
               </ResponsiveContainer>
             )}
           </div>
@@ -1945,7 +2072,7 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
           </div>
         </div>
 
-        {/* Productos Más Vendidos (Simulado para Demo Visual) */}
+        {/* Productos Más Vendidos */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
           <h3 className="text-lg font-bold text-slate-700 mb-4 flex items-center gap-2">
             <TrendingUp size={20} className="text-green-500" /> Más Vendidos
@@ -1970,7 +2097,7 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
         </div>
       </div>
 
-      {/* AI STOCK PREDICTIONS (NEW) */}
+      {/* AI STOCK PREDICTIONS */}
       {stockAlertData.length > 0 && (
         <div className="bg-indigo-900 text-white p-6 rounded-2xl shadow-xl border border-indigo-700 animate-in zoom-in-95 duration-500">
           <div className="flex items-center justify-between mb-6">
@@ -2002,13 +2129,21 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
           </div>
         </div>
       )}
-      <div className="flex justify-between text-sm border-b border-slate-100 pb-2">
-        <span>Valor Inventario</span>
-        <span className="font-mono font-bold">{formatCurrency(products.reduce((a, b) => a + (b.price * b.stock), 0))}</span>
-      </div>
-      <div className="flex justify-between text-sm pt-1">
-        <span className="text-slate-500">Usuarios Activos en Sistema</span>
-        <span className="font-mono font-bold text-slate-700">2</span>
+
+      {/* Footer Stats */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row gap-4 sm:gap-8">
+        <div className="flex-1 flex justify-between sm:justify-start sm:gap-4 items-center">
+          <span className="text-sm text-slate-500">Valor Inventario</span>
+          <span className="font-mono font-bold text-slate-800">{formatCurrency(products.reduce((a, b) => a + (b.price * b.stock), 0))}</span>
+        </div>
+        <div className="flex-1 flex justify-between sm:justify-start sm:gap-4 items-center">
+          <span className="text-sm text-slate-500">Productos Totales</span>
+          <span className="font-mono font-bold text-slate-800">{products.length}</span>
+        </div>
+        <div className="flex-1 flex justify-between sm:justify-start sm:gap-4 items-center">
+          <span className="text-sm text-slate-500">Categorías</span>
+          <span className="font-mono font-bold text-slate-800">{inventoryByCategory.length}</span>
+        </div>
       </div>
     </div>
   );
@@ -3410,16 +3545,34 @@ const CashClosingView = ({ timeOffset, user }) => {
   );
 };
 
-const SettingsView = ({ timeOffset, notificationPhone, callmebotApiKey, onUpdateSettings }) => {
+const SettingsView = ({ timeOffset, notificationPhone, callmebotApiKey, onUpdateSettings, isShopOpen, setIsShopOpen, estimatedPrepTime, setEstimatedPrepTime }) => {
   const [localOffset, setLocalOffset] = useState(timeOffset);
   const [localPhone, setLocalPhone] = useState(notificationPhone);
   const [localApiKey, setLocalApiKey] = useState(callmebotApiKey);
+  const [businessName, setBusinessName] = useState(() => localStorage.getItem('business_name') || 'Empresa');
+  const [businessAddress, setBusinessAddress] = useState(() => localStorage.getItem('business_address') || 'B° Camilo Ortega, frente al costado oeste de la iglesia católica');
+  const [businessCity, setBusinessCity] = useState(() => localStorage.getItem('business_city') || 'Managua, Nicaragua');
+  const [businessPhone, setBusinessPhone] = useState(() => localStorage.getItem('business_phone') || '2222-5555');
+  const [businessFooter, setBusinessFooter] = useState(() => localStorage.getItem('business_footer') || '¡Gracias por su compra!');
+  const [taxRate, setTaxRate] = useState(() => localStorage.getItem('tax_rate') || '0');
+  const [currency, setCurrency] = useState(() => localStorage.getItem('currency_symbol') || 'C$');
 
   useEffect(() => {
     setLocalOffset(timeOffset);
     setLocalPhone(notificationPhone);
     setLocalApiKey(callmebotApiKey);
   }, [timeOffset, notificationPhone, callmebotApiKey]);
+
+  const saveBusinessInfo = () => {
+    localStorage.setItem('business_name', businessName);
+    localStorage.setItem('business_address', businessAddress);
+    localStorage.setItem('business_city', businessCity);
+    localStorage.setItem('business_phone', businessPhone);
+    localStorage.setItem('business_footer', businessFooter);
+    localStorage.setItem('tax_rate', taxRate);
+    localStorage.setItem('currency_symbol', currency);
+    onUpdateSettings({ business_name: businessName });
+  };
 
   return (
     <div className="p-8 bg-white rounded-2xl border border-slate-200 shadow-sm animate-in fade-in">
@@ -3504,6 +3657,7 @@ const SettingsView = ({ timeOffset, notificationPhone, callmebotApiKey, onUpdate
           </div>
         </div>
 
+        {/* Catálogo Digital */}
         <div className="p-6 bg-slate-50 rounded-xl border border-slate-100">
           <h3 className="font-bold text-slate-700 mb-2">Gestión de Catálogo Digital</h3>
           <p className="text-sm text-slate-500 mb-4">Controle la disponibilidad de la tienda en línea y tiempos de entrega.</p>
@@ -3547,10 +3701,85 @@ const SettingsView = ({ timeOffset, notificationPhone, callmebotApiKey, onUpdate
           </div>
         </div>
 
+        {/* Información del Negocio */}
         <div className="p-6 bg-slate-50 rounded-xl border border-slate-100">
           <h3 className="font-bold text-slate-700 mb-2">Información del Negocio</h3>
-          <p className="text-sm text-slate-500">Configure el nombre, dirección y logo en las facturas.</p>
-          <button className="mt-4 px-4 py-2 bg-violet-100 text-violet-700 rounded-lg text-sm font-bold hover:bg-violet-200 transition-colors">Editar Perfil</button>
+          <p className="text-sm text-slate-500 mb-4">Configure los datos que aparecen en facturas y reportes.</p>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-slate-400 uppercase font-black block mb-1">Nombre del Negocio</label>
+              <input type="text" className="w-full border rounded-lg px-3 py-2 text-sm" value={businessName} onChange={(e) => setBusinessName(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 uppercase font-black block mb-1">Dirección</label>
+              <input type="text" className="w-full border rounded-lg px-3 py-2 text-sm" value={businessAddress} onChange={(e) => setBusinessAddress(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-400 uppercase font-black block mb-1">Ciudad</label>
+                <input type="text" className="w-full border rounded-lg px-3 py-2 text-sm" value={businessCity} onChange={(e) => setBusinessCity(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 uppercase font-black block mb-1">Teléfono</label>
+                <input type="text" className="w-full border rounded-lg px-3 py-2 text-sm" value={businessPhone} onChange={(e) => setBusinessPhone(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-slate-400 uppercase font-black block mb-1">Mensaje de Pie de Factura</label>
+              <input type="text" className="w-full border rounded-lg px-3 py-2 text-sm" value={businessFooter} onChange={(e) => setBusinessFooter(e.target.value)} />
+            </div>
+            <button onClick={saveBusinessInfo} className="w-full py-2 bg-violet-600 text-white rounded-lg text-sm font-bold hover:bg-violet-700 transition-colors shadow-sm">Guardar Información del Negocio</button>
+          </div>
+        </div>
+
+        {/* Impuestos y Moneda */}
+        <div className="p-6 bg-slate-50 rounded-xl border border-slate-100">
+          <h3 className="font-bold text-slate-700 mb-2">Impuestos y Moneda</h3>
+          <p className="text-sm text-slate-500 mb-4">Configure la tasa de impuesto y símbolo de moneda.</p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-slate-400 uppercase font-black block mb-1">Impuesto (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={taxRate}
+                  onChange={(e) => setTaxRate(e.target.value)}
+                />
+                <p className="text-[10px] text-slate-400 mt-1">0 = Sin impuesto</p>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 uppercase font-black block mb-1">Símbolo de Moneda</label>
+                <select
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                >
+                  <option value="C$">C$ (Córdoba NIO)</option>
+                  <option value="$">$ (Dólar USD)</option>
+                  <option value="Q">Q (Quetzal GT)</option>
+                  <option value="S/">S/ (Sol PEN)</option>
+                  <option value="Bs">Bs (Bolívar VES)</option>
+                </select>
+              </div>
+            </div>
+            <button onClick={saveBusinessInfo} className="w-full py-2 bg-violet-600 text-white rounded-lg text-sm font-bold hover:bg-violet-700 transition-colors shadow-sm">Guardar</button>
+          </div>
+        </div>
+
+        {/* Datos de la Sesión */}
+        <div className="p-6 bg-slate-50 rounded-xl border border-slate-100">
+          <h3 className="font-bold text-slate-700 mb-2">Sesión Actual</h3>
+          <p className="text-sm text-slate-500 mb-4">Información de la sesión activa.</p>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between"><span className="text-slate-500">Token expira en:</span><span className="font-mono text-slate-700">8 horas desde login</span></div>
+            <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg text-xs text-amber-700 mt-2">
+              La sesión se mantiene activa al recargar la página. Para cerrar sesión, use el botón de cerrar sesión en la barra superior.
+            </div>
+          </div>
         </div>
       </div>
     </div>

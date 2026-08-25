@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, Edit, Trash2, User, CheckCircle, XCircle } from 'lucide-react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const isCapacitor = Boolean(window.Capacitor && window.Capacitor.isNative);
+const API_BASE_URL = import.meta.env.VITE_API_URL ||
+  (isCapacitor ? 'https://sistema-ventas-tjby.onrender.com' :
+    (import.meta.env.MODE === 'production' ? '' : 'http://localhost:3001'));
 
-const UserManagementView = ({ showNotification, userRole }) => {
+const UserManagementView = ({ showNotification, userRole, userToken }) => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -12,16 +15,17 @@ const UserManagementView = ({ showNotification, userRole }) => {
   const [editingUser, setEditingUser] = useState(null);
   const [formData, setFormData] = useState({ name: '', email: '', password: '', role: 'seller' });
 
+  const authHeaders = useMemo(() => ({
+    'Authorization': `Bearer ${userToken}`,
+    'x-user-role': userRole
+  }), [userToken, userRole]);
+
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // For this simple demo, we pass the userRole in a header for authorization
-      // In a real app, this would be handled by JWT in an Authorization header
       const response = await fetch(`${API_BASE_URL}/api/users`, {
-        headers: {
-          'x-user-role': userRole // Temporarily pass role for backend authorization
-        }
+        headers: authHeaders
       });
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -35,7 +39,7 @@ const UserManagementView = ({ showNotification, userRole }) => {
     } finally {
       setLoading(false);
     }
-  }, [showNotification, userRole]);
+  }, [showNotification, userRole, userToken]);
 
   useEffect(() => {
     fetchUsers();
@@ -52,7 +56,7 @@ const UserManagementView = ({ showNotification, userRole }) => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-role': userRole
+          ...authHeaders
         },
         body: JSON.stringify(formData),
       });
@@ -82,7 +86,7 @@ const UserManagementView = ({ showNotification, userRole }) => {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-user-role': userRole
+          ...authHeaders
         },
         body: JSON.stringify(payload),
       });
@@ -107,9 +111,7 @@ const UserManagementView = ({ showNotification, userRole }) => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/users/${userId}`, {
         method: 'DELETE',
-        headers: {
-          'x-user-role': userRole
-        }
+        headers: authHeaders
       });
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
