@@ -46,6 +46,7 @@ const {
   getPendingAutoOrders,
   updateAutoOrderStatus,
   getNextTransactionId,
+  getNextManualCode,
   getAllCombos,
   createCombo,
   deleteCombo,
@@ -1154,9 +1155,24 @@ cron.schedule('0 12 * * *', async () => {
   } catch (error) {
     console.error('Error en el cron de reporte diario:', error);
   }
-}, {
+  }, {
   scheduled: true,
   timezone: "America/Managua"
+});
+
+// --- Socket.io: Monitoreo de actividad del frontend ---
+io.on('connection', (socket) => {
+  console.log(`[Socket.io] Cliente conectado: ${socket.id}`);
+
+  socket.on('frontendActivity', (data) => {
+    const { eventType, visibilityState, lastActivityTime, userId } = data || {};
+    const status = visibilityState === 'visible' ? 'ACTIVO' : 'DORMIDO';
+    console.log(`[FRONTEND ACTIVITY] Usuario ${userId || 'desconocido'} está ${status} | Evento: ${eventType} | Visibilidad: ${visibilityState} | Última actividad: ${lastActivityTime}`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`[Socket.io] Cliente desconectado: ${socket.id}`);
+  });
 });
 
   // Servir archivos estáticos del frontend (para Render y Local)

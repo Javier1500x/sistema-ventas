@@ -27,3 +27,4 @@ server_error.log
 *.njsproj
 *.sln
 *.sw?
+.aider*
