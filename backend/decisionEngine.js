@@ -3,7 +3,9 @@ const { getAllSales, getAllProducts, getSetting } = require('./database');
 // Función helper para obtener fecha ajustada (UTC+offset)
 const getAdjustedDate = async () => {
   const offset = await getSetting('time_offset');
-  const numericOffset = offset !== null ? parseFloat(offset) : -6;
+  // Siempre usar -6 como default para Nicaragua. Nunca usar un valor positivo o 0.
+  let numericOffset = offset !== null ? parseFloat(offset) : -6;
+  if (numericOffset >= 0 || isNaN(numericOffset)) numericOffset = -6;
   // Date.now() es UTC. Sumamos el offset para obtener un objeto Date cuyos dígitos UTC sean la hora local.
   return new Date(Date.now() + (numericOffset * 3600000));
 };
@@ -25,13 +27,14 @@ const getDailySummary = async () => {
     // and how daily summary is calculated.
     // For now, returning a dummy value or throwing an error to indicate incomplete logic.
 
-    // Obtener offset
+    // Obtener offset - siempre -6 para Nicaragua
     const offsetStr = await getSetting('time_offset');
-    const offset = offsetStr !== null ? parseFloat(offsetStr) : -6;
+    let offset = offsetStr !== null ? parseFloat(offsetStr) : -6;
+    if (offset >= 0 || isNaN(offset)) offset = -6;
 
-    // Filtrar ventas del día local que NO estén cerradas
+    // Incluir TODAS las ventas del día (abiertas y cerradas) para el resumen
     const dailySales = sales.filter(sale => {
-      if (!sale.date || sale.is_closed === 1) return false;
+      if (!sale.date) return false;
       const isExplicitUTC = sale.date.includes('Z') || sale.date.includes('T');
       if (isExplicitUTC) {
         const d = new Date(sale.date);
@@ -74,11 +77,14 @@ const getSalesChartData = async () => {
       salesTrendMap.set(dateStr, 0);
     }
 
-    // Get offset for chart grouping
+    // Get offset for chart grouping - siempre -6 para Nicaragua
     const offsetStr = await getSetting('time_offset');
-    const offset = offsetStr !== null ? parseFloat(offsetStr) : -6;
+    let offset = offsetStr !== null ? parseFloat(offsetStr) : -6;
+    if (offset >= 0 || isNaN(offset)) offset = -6;
 
-    sales.filter(s => s.is_closed === 0).forEach(sale => {
+    // Incluir TODAS las ventas (abiertas y cerradas) para que el gráfico muestre datos reales
+    sales.forEach(sale => {
+      if (!sale.date) return;
       const isExplicitUTC = sale.date.includes('Z') || sale.date.includes('T');
       let saleDateStr;
 
@@ -102,7 +108,8 @@ const getSalesChartData = async () => {
     const productCategoryMap = new Map();
     products.forEach(p => productCategoryMap.set(String(p.id), p.category));
 
-    sales.filter(s => s.is_closed === 0).forEach(sale => {
+    // Incluir TODAS las ventas para categorías
+    sales.forEach(sale => {
       const cat = productCategoryMap.get(String(sale.productId)) || 'Otros';
       categoryMap.set(cat, (categoryMap.get(cat) || 0) + (sale.price * sale.quantity));
     });
@@ -159,13 +166,24 @@ const getStockPredictor = async () => {
     const products = await getAllProducts();
     const today = await getAdjustedDateString();
 
+    // Obtener offset para ajuste de fechas
+    const offsetStr = await getSetting('time_offset');
+    let offset = offsetStr !== null ? parseFloat(offsetStr) : -6;
+    if (offset >= 0 || isNaN(offset)) offset = -6;
+
     const alerts = [];
     products.forEach(product => {
-      // Ventas de este producto hoy
-      const todaySales = sales.filter(s => 
-        String(s.productId) === String(product.id) && 
-        s.date.startsWith(today)
-      ).reduce((sum, s) => sum + s.quantity, 0);
+      // Ventas de este producto hoy - ajustar por offset
+      const todaySales = sales.filter(s => {
+        if (!s.date || String(s.productId) !== String(product.id)) return false;
+        const isExplicitUTC = s.date.includes('Z') || s.date.includes('T');
+        if (isExplicitUTC) {
+          const d = new Date(s.date);
+          const adjusted = new Date(d.getTime() + (offset * 3600000));
+          return adjusted.toISOString().startsWith(today);
+        }
+        return s.date.startsWith(today);
+      }).reduce((sum, s) => sum + (parseFloat(s.quantity) || 0), 0);
 
       const stock = product.stock;
       if (stock > 0 && todaySales > stock * 0.5) {

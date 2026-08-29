@@ -105,7 +105,7 @@ const UserManagementView = ({ showNotification, userRole, userToken }) => {
   };
 
   const handleDeleteUser = async (userId) => {
-    if (!window.confirm('¿Estás seguro de que quieres DESACTIVAR este usuario? No podrá iniciar sesión.')) {
+    if (!window.confirm('¿Estás seguro de que quieres ELIMINAR este usuario? Esta acción es permanente.')) {
       return;
     }
     try {
@@ -116,11 +116,11 @@ const UserManagementView = ({ showNotification, userRole, userToken }) => {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      showNotification('Usuario desactivado con éxito.');
+      showNotification('Usuario eliminado con éxito.');
       fetchUsers();
     } catch (err) {
       console.error("Error deleting user:", err);
-      showNotification('Error al desactivar el usuario.', 'error');
+      showNotification('Error al eliminar el usuario.', 'error');
     }
   };
 

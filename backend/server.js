@@ -58,7 +58,8 @@ const {
   createBill,
   updateBillStatus,
   deleteBill,
-  getDashboardTotals
+  getDashboardTotals,
+  getDailySales
 } = require('./database');
 const { getDailySummary, getSalesChartData, getComboSuggestions, getStockPredictor } = require('./decisionEngine');
 const { sendWhatsAppMessage, sendLowStockAlert } = require('./notificationService');
@@ -221,7 +222,7 @@ app.put('/api/users/:id', authenticateToken, authorizeRole('admin'), async (req,
 app.delete('/api/users/:id', authenticateToken, authorizeRole('admin'), async (req, res) => {
   try {
     await deleteUser(req.params.id);
-    res.json({ message: 'Usuario desactivado con éxito' });
+    res.json({ message: 'Usuario eliminado con éxito' });
   } catch (error) {
     res.status(500).json({ message: 'Error al eliminar usuario.' });
   }
@@ -462,8 +463,10 @@ app.post('/api/cash-closings', async (req, res) => {
 
     // Si el cierre es definitivo (closed), marcar las ventas de hoy como cerradas
     if (req.body.status === 'closed') {
-      console.log('Cerrando ventas activas para la fecha:', req.body.date);
-      await markSalesAsClosed(req.body.date);
+      const offsetStr = await getSetting('time_offset');
+      const offset = offsetStr !== null ? parseFloat(offsetStr) : -6;
+      console.log('Cerrando ventas activas para la fecha:', req.body.date, 'con offset:', offset);
+      await markSalesAsClosed(req.body.date, offset);
     }
 
     io.emit('dashboardUpdate', { type: 'cash_closing' });
@@ -877,8 +880,11 @@ app.post('/api/settings', async (req, res) => {
   try {
     const { time_offset, notification_phone, callmebot_apikey, shop_open, estimated_prep_time } = req.body;
     if (time_offset !== undefined) {
-      await updateSetting('time_offset', time_offset);
-      currentOffset = parseFloat(time_offset);
+      // Validar que el offset esté en un rango válido (-12 a +14)
+      const parsedOffset = parseFloat(time_offset);
+      const validOffset = (isNaN(parsedOffset) || parsedOffset >= 0) ? '-6' : String(parsedOffset);
+      await updateSetting('time_offset', validOffset);
+      currentOffset = parseFloat(validOffset);
     }
     if (notification_phone !== undefined) await updateSetting('notification_phone', notification_phone);
     if (callmebot_apikey !== undefined) await updateSetting('callmebot_apikey', callmebot_apikey);
@@ -921,6 +927,18 @@ app.get('/api/dashboard-charts', async (req, res) => {
     res.status(200).json(chartData);
   } catch (error) {
     res.status(500).json({ message: 'Error al obtener datos para gráficos.' });
+  }
+});
+
+app.get('/api/daily-sales', authenticateToken, async (req, res) => {
+  try {
+    const offsetStr = await getSetting('time_offset');
+    const offset = offsetStr !== null ? parseFloat(offsetStr) : -6;
+    const dailySales = await getDailySales(offset);
+    res.status(200).json(dailySales);
+  } catch (error) {
+    console.error('Error al obtener ventas diarias:', error);
+    res.status(500).json({ message: 'Error al obtener ventas diarias.' });
   }
 });
 

@@ -252,6 +252,10 @@ const initDb = async () => {
     console.error("Error en migración products (fraccionamiento):", e.message);
   }
 
+  // Migrations to support fractional quantities
+  try { await db.execute("ALTER TABLE sales_history ALTER COLUMN quantity REAL"); } catch (e) {}
+  try { await db.execute("ALTER TABLE purchase_items ALTER COLUMN quantity REAL"); } catch (e) {}
+
   console.log('Base de datos inicializada correctamente.');
 };
 
@@ -309,7 +313,7 @@ const updateUser = async (id, { name, email, role, status, password }) => {
 };
 
 const deleteUser = async (id) => {
-  const result = await run("UPDATE users SET status = 'inactive' WHERE id = ?", [id]);
+  const result = await run("DELETE FROM users WHERE id = ?", [id]);
   return { id, changes: result.rowsAffected };
 };
 
@@ -391,9 +395,26 @@ const getSaleByPublicId = async (publicId) => {
   return rows;
 };
 
-const markSalesAsClosed = async (datePrefix) => {
-  const result = await run('UPDATE sales_history SET is_closed = 1 WHERE date LIKE ? AND is_closed = 0', [`${datePrefix}%`]);
-  return { changes: result.rowsAffected };
+const markSalesAsClosed = async (localDate, offset = -6) => {
+  const openSales = await query('SELECT id, date FROM sales_history WHERE is_closed = 0');
+  let closedCount = 0;
+  for (const sale of openSales) {
+    if (!sale.date) continue;
+    const isExplicitUTC = sale.date.includes('Z') || sale.date.includes('T');
+    let saleLocalDate;
+    if (isExplicitUTC) {
+      const d = new Date(sale.date);
+      const adjusted = new Date(d.getTime() + (offset * 3600000));
+      saleLocalDate = adjusted.toISOString().split('T')[0];
+    } else {
+      saleLocalDate = sale.date.split(' ')[0];
+    }
+    if (saleLocalDate === localDate) {
+      await run('UPDATE sales_history SET is_closed = 1 WHERE id = ?', [sale.id]);
+      closedCount++;
+    }
+  }
+  return { changes: closedCount };
 };
 
 const getAllSales = async () => {
@@ -405,8 +426,22 @@ const getSaleByTransactionId = async (transactionId) => {
 };
 
 const getNextTransactionId = async () => {
-  const rows = await query('SELECT MAX(transactionId) as maxId FROM sales_history', []);
-  return (rows[0] && rows[0].maxId != null) ? rows[0].maxId + 1 : 1;
+  try {
+    const existing = await query("SELECT value FROM settings WHERE key = 'next_transaction_id'");
+    if (existing.length === 0) {
+      const maxRows = await query('SELECT MAX(transactionId) as maxId FROM sales_history');
+      const startId = (maxRows[0] && maxRows[0].maxId != null) ? maxRows[0].maxId + 1 : 1;
+      await run("INSERT INTO settings (key, value) VALUES ('next_transaction_id', ?)", [String(startId)]);
+      return startId;
+    }
+    await run("UPDATE settings SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT) WHERE key = 'next_transaction_id'");
+    const rows = await query("SELECT value FROM settings WHERE key = 'next_transaction_id'");
+    return parseInt(rows[0].value);
+  } catch (error) {
+    console.error('Error in getNextTransactionId:', error);
+    const rows = await query('SELECT MAX(transactionId) as maxId FROM sales_history');
+    return (rows[0] && rows[0].maxId != null) ? rows[0].maxId + 1 : 1;
+  }
 };
 
 const cancelSaleByTransactionId = async (transactionId) => {
@@ -690,6 +725,44 @@ const getDashboardTotals = async () => {
   };
 };
 
+// --- Ventas Diarias ---
+const getDailySales = async (offset = -6) => {
+  // Siempre asegurar que el offset sea negativo
+  if (!offset || offset >= 0) offset = -6;
+  const sales = await getAllSales();
+  const dailyMap = new Map();
+  
+  sales.forEach(sale => {
+    if (!sale.date) return;
+    const isExplicitUTC = sale.date.includes('Z') || sale.date.includes('T');
+    let saleLocalDate;
+    if (isExplicitUTC) {
+      const d = new Date(sale.date);
+      const adjusted = new Date(d.getTime() + (offset * 3600000));
+      saleLocalDate = adjusted.toISOString().split('T')[0];
+    } else {
+      saleLocalDate = sale.date.split(' ')[0];
+    }
+    
+    if (!dailyMap.has(saleLocalDate)) {
+      dailyMap.set(saleLocalDate, { date: saleLocalDate, totalSales: 0, totalTransactions: new Set(), isClosed: false });
+    }
+    const day = dailyMap.get(saleLocalDate);
+    day.totalSales += (sale.price || 0) * (sale.quantity || 0);
+    if (sale.transactionId) day.totalTransactions.add(sale.transactionId);
+    if (sale.is_closed === 1) day.isClosed = true;
+  });
+  
+  const result = Array.from(dailyMap.values()).map(d => ({
+    date: d.date,
+    totalSales: d.totalSales,
+    totalTransactions: d.totalTransactions.size,
+    isClosed: d.isClosed
+  })).sort((a, b) => b.date.localeCompare(a.date));
+  
+  return result;
+};
+
 module.exports = {
   db,
   initDb,
@@ -739,5 +812,6 @@ module.exports = {
   createBill,
   updateBillStatus,
   deleteBill,
-  getDashboardTotals
+  getDashboardTotals,
+  getDailySales
 };

@@ -37,7 +37,9 @@ import {
   Download,
   Upload,
   Image,
-  ScanLine
+  ScanLine,
+  Maximize,
+  Minimize
 } from 'lucide-react';
 import {
   BarChart,
@@ -283,6 +285,16 @@ export default function App() {
   const [isShopOpen, setIsShopOpen] = useState(true);
   const [estimatedPrepTime, setEstimatedPrepTime] = useState('10-15');
   const [stockAlertData, setStockAlertData] = useState([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Toggle pantalla completa
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => {});
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
 
   // Estado para notificaciones temporales
   const [notification, setNotification] = useState(null);
@@ -366,7 +378,11 @@ export default function App() {
       });
       if (response.ok) {
         const data = await response.json();
-        if (data.time_offset) setTimeOffset(parseFloat(data.time_offset));
+        if (data.time_offset) {
+          const parsed = parseFloat(data.time_offset);
+          // Nunca aceptar offset positivo - siempre debe ser negativo para Nicaragua
+          setTimeOffset((!isNaN(parsed) && parsed < 0) ? parsed : -6);
+        }
         if (data.notification_phone) setNotificationPhone(data.notification_phone);
         if (data.callmebot_apikey) setCallmebotApiKey(data.callmebot_apikey);
         if (data.shop_open !== undefined) setIsShopOpen(data.shop_open === 'true');
@@ -405,7 +421,10 @@ export default function App() {
         body: JSON.stringify(settings)
       });
       if (response.ok) {
-        if (settings.time_offset !== undefined) setTimeOffset(parseFloat(settings.time_offset));
+        if (settings.time_offset !== undefined) {
+          const parsed = parseFloat(settings.time_offset);
+          setTimeOffset((!isNaN(parsed) && parsed < 0) ? parsed : -6);
+        }
         if (settings.notification_phone !== undefined) setNotificationPhone(settings.notification_phone);
         if (settings.callmebot_apikey !== undefined) setCallmebotApiKey(settings.callmebot_apikey);
         showNotification('Configuración de sistema actualizada', 'success');
@@ -418,6 +437,56 @@ export default function App() {
   const handleDownloadPDF = () => {
     window.open(`${API_BASE_URL}/api/reports/pdf`, '_blank');
     showNotification('Iniciando descarga de reporte...', 'info');
+  };
+
+  const handleExportCSV = () => {
+    try {
+      const now = new Date();
+      const offset = timeOffset;
+      const localDate = new Date(now.getTime() + (offset * 3600000));
+      const todayStr = localDate.toISOString().split('T')[0];
+
+      // Filtrar ventas de hoy
+      const dailySales = sales.filter(sale => {
+        if (!sale.date) return false;
+        const isExplicitUTC = sale.date.includes('Z') || sale.date.includes('T');
+        if (isExplicitUTC) {
+          const d = new Date(sale.date);
+          const adjusted = new Date(d.getTime() + (offset * 3600000));
+          return adjusted.toISOString().startsWith(todayStr);
+        } else {
+          return sale.date.startsWith(todayStr);
+        }
+      });
+
+      // Headers CSV
+      const headers = ['Fecha', 'Producto', 'Cantidad', 'Precio Unitario', 'Subtotal', 'Método de Pago', 'Transacción ID'];
+      const rows = dailySales.map(sale => {
+        const d = new Date(sale.date);
+        const adjusted = new Date(d.getTime() + (offset * 3600000));
+        const fecha = adjusted.toLocaleString('es-NI');
+        const subtotal = (parseFloat(sale.price) * parseFloat(sale.quantity)).toFixed(2);
+        return [fecha, `"${sale.productName}"`, sale.quantity, parseFloat(sale.price).toFixed(2), subtotal, sale.paymentMethod, sale.transactionId];
+      });
+
+      // Agregar fila de total
+      const totalVentas = dailySales.reduce((sum, s) => sum + (parseFloat(s.price) * parseFloat(s.quantity)), 0);
+      rows.push([]);
+      rows.push(['', 'TOTAL', '', '', totalVentas.toFixed(2), '', '']);
+
+      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Reporte_Ventas_${todayStr}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      showNotification('CSV exportado con éxito', 'success');
+    } catch (error) {
+      console.error('Error exportando CSV:', error);
+      showNotification('Error al exportar CSV', 'error');
+    }
   };
 
   const handlePreviewPDF = async () => {
@@ -444,39 +513,26 @@ export default function App() {
 
   const handleSendManualReport = async () => {
     try {
-      showNotification('Enviando reporte...', 'info');
-      // Intentamos primero con el backend (si hay API Key)
-      const response = await fetch(`${API_BASE_URL}/api/send-report`, {
-        method: 'POST',
+      showNotification('Generando reporte para WhatsApp...', 'info');
+
+      // Siempre generar el reporte y abrir wa.me
+      const reportResponse = await fetch(`${API_BASE_URL}/api/generate-only-report`, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'x-user-role': user.role
         }
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        showNotification(data.message, 'success');
+      if (reportResponse.ok) {
+        const { report } = await reportResponse.json();
+        const phone = notificationPhone.replace(/\D/g, '') || "50585853867";
+        const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(report)}`;
+        window.open(waUrl, '_blank');
+        showNotification('Abriendo WhatsApp Web... Elige a quién enviar el reporte', 'success');
       } else {
-        // Fallback: Abrir WhatsApp Web con el reporte (Sin Key)
-        const reportResponse = await fetch(`${API_BASE_URL}/api/generate-only-report`, {
-          headers: {
-            'Authorization': `Bearer ${user.token}`,
-            'x-user-role': user.role
-          }
-        });
-        if (reportResponse.ok) {
-          const { report } = await reportResponse.json();
-          const phone = notificationPhone.replace(/\D/g, '') || "50585853867";
-          const waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(report)}`;
-          window.open(waUrl, '_blank');
-          showNotification('Abriendo WhatsApp Web...', 'info');
-        } else {
-          showNotification('Error al generar reporte manual', 'error');
-        }
+        showNotification('Error al generar reporte', 'error');
       }
     } catch (error) {
-      showNotification('Error de conexión', 'error');
+      showNotification('Error de conexión al generar reporte', 'error');
     }
   };
 
@@ -496,10 +552,22 @@ export default function App() {
         fetchSuppliers();
       }, 15000);
 
-      // Limpiar intervalo si el usuario sale o el componente se desmonta
-      return () => clearInterval(intervalId);
+      // Verificar cambio de día para auto-abrir caja
+      let lastDate = getNicaraguaDateString(timeOffset);
+      const dayCheckInterval = setInterval(() => {
+        const currentDate = getNicaraguaDateString(timeOffset);
+        if (currentDate !== lastDate) {
+          lastDate = currentDate;
+          setRefreshKey(prev => prev + 1);
+        }
+      }, 60000);
+
+      return () => {
+        clearInterval(intervalId);
+        clearInterval(dayCheckInterval);
+      };
     }
-  }, [user, fetchProducts, fetchSales, fetchSuppliers, fetchSettings]);
+  }, [user, fetchProducts, fetchSales, fetchSuppliers, fetchSettings, timeOffset]);
 
   // Estado para el modal de la factura
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
@@ -794,27 +862,41 @@ export default function App() {
   };
 
   // --- LÓGICA DE VENTAS (POS) ---
-  const addToCart = (product) => {
+  const addToCart = (product, customQuantity = null) => {
     if (product.stock <= 0) {
       showNotification('¡Producto agotado!', 'error');
+      return;
+    }
+
+    const isWeight = product.unit_type === 'weight';
+    const qty = customQuantity !== null ? customQuantity : 1;
+
+    if (qty <= 0) {
+      showNotification('La cantidad debe ser mayor a 0', 'error');
+      return;
+    }
+
+    if (qty > product.stock) {
+      showNotification('No hay suficiente stock disponible', 'error');
       return;
     }
 
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
-        // Verificar stock en carrito vs real
-        if (existing.quantity >= product.stock) {
+        const newQty = existing.quantity + qty;
+        if (newQty > product.stock) {
           showNotification('No hay más stock disponible', 'error');
           return prev;
         }
         return prev.map(item =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+          item.id === product.id ? { ...item, quantity: newQty } : item
         );
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return [...prev, { ...product, quantity: qty }];
     });
-    showNotification(`"${product.name}" añadido al carrito.`);
+    const unitLabel = isWeight ? `${qty} lb` : `${qty} unidad(es)`;
+    showNotification(`"${product.name}" (${unitLabel}) añadido al carrito.`);
   };
 
   const removeFromCart = (id) => {
@@ -824,8 +906,10 @@ export default function App() {
   const updateQuantity = (id, delta) => {
     setCart(prev => prev.map(item => {
       if (item.id === id) {
-        const newQty = Math.max(1, item.quantity + delta);
-        // Validar contra stock real
+        const isWeight = item.unit_type === 'weight';
+        const step = isWeight ? 0.5 : 1;
+        const newQty = Math.max(step, Math.round((item.quantity + delta) * 10) / 10);
+        // Validate against stock
         const product = products.find(p => p.id === id);
         if (newQty > product.stock) return item;
         return { ...item, quantity: newQty };
@@ -990,7 +1074,7 @@ export default function App() {
       });
       if (response.ok) {
         showNotification('Producto eliminado', 'success');
-        await fetchProducts(); // Recargar productos después de eliminar
+        await fetchProducts();
       } else {
         const errorData = await response.json();
         showNotification(`Error al eliminar producto: ${errorData.message}`, 'error');
@@ -998,6 +1082,32 @@ export default function App() {
     } catch (error) {
       console.error('Error de conexión al eliminar producto:', error);
       showNotification('Error de conexión al eliminar producto.', 'error');
+    }
+  };
+
+  const handleRestock = async (productId, addQuantity) => {
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    const newStock = product.stock + addQuantity;
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/products/${productId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.token}`,
+          'x-user-role': user.role
+        },
+        body: JSON.stringify({ ...product, stock: newStock }),
+      });
+      if (response.ok) {
+        showNotification(`Stock de "${product.name}" actualizado a ${newStock}`, 'success');
+        await fetchProducts();
+      } else {
+        const errorData = await response.json();
+        showNotification(`Error al reabastecer: ${errorData.message}`, 'error');
+      }
+    } catch (error) {
+      showNotification('Error de conexión al reabastecer.', 'error');
     }
   };
 
@@ -1123,6 +1233,9 @@ export default function App() {
             </div>
           </div>
 
+          <button onClick={toggleFullscreen} className="p-2 text-violet-200 hover:text-white transition-colors" title={isFullscreen ? "Salir de pantalla completa" : "Pantalla completa"}>
+            {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+          </button>
           <button onClick={handleLogout} className="p-2 text-violet-200 hover:text-red-300 transition-colors" title="Cerrar Sesión">
             <LogOut size={20} />
           </button>
@@ -1162,6 +1275,7 @@ export default function App() {
             )}
             {(user.role === 'admin' || user.role === 'seller') && <SidebarItem icon={<History size={20} />} label="Historial" active={view === 'history'} onClick={() => { setView('history'); setIsMobileMenuOpen(false); }} />}
             {(user.role === 'admin' || user.role === 'seller') && <SidebarItem icon={<ShieldCheck size={20} />} label="Cierre de Caja" active={view === 'cash-closing'} onClick={() => { setView('cash-closing'); setIsMobileMenuOpen(false); }} />}
+    {(user.role === 'admin' || user.role === 'seller') && <SidebarItem icon={<TrendingUp size={20} />} label="Ventas Diarias" active={view === 'daily-sales'} onClick={() => { setView('daily-sales'); setIsMobileMenuOpen(false); }} />}
             {(user.role === 'admin' || user.role === 'inventory_manager') && (
               <SidebarItem icon={<Banknote size={22} />} label="Flujo de Caja" active={view === 'cash_flow'} onClick={() => { setView('cash_flow'); setIsMobileMenuOpen(false); }} />
             )}
@@ -1208,13 +1322,16 @@ export default function App() {
             {view === 'dashboard' && (user.role === 'admin' || user.role === 'inventory_manager') && (
               <DashboardView
                 products={products}
+                sales={sales}
                 refreshKey={refreshKey}
                 onSendReport={handleSendManualReport}
                 onDownloadPDF={handleDownloadPDF}
+                onExportCSV={handleExportCSV}
                 onPreviewPDF={handlePreviewPDF}
                 user={user}
                 stockAlertData={stockAlertData}
                 setStockAlertData={setStockAlertData}
+                onRestock={handleRestock}
               />
             )}
             {view === 'pos' && (user.role === 'admin' || user.role === 'seller') && <POSView
@@ -1256,7 +1373,8 @@ export default function App() {
                 onPurchase={() => setIsPurchaseModalOpen(true)}
               />
             )}
-            {view === 'cash-closing' && (user.role === 'admin' || user.role === 'seller') && <CashClosingView timeOffset={timeOffset} user={user} />}
+            {view === 'cash-closing' && (user.role === 'admin' || user.role === 'seller') && <CashClosingView timeOffset={timeOffset} user={user} onRefresh={() => setRefreshKey(prev => prev + 1)} />}
+            {view === 'daily-sales' && (user.role === 'admin' || user.role === 'seller') && <DailySalesView user={user} />}
             {view === 'cash_flow' && (user.role === 'admin' || user.role === 'inventory_manager') && <CashFlow timeOffset={timeOffset} user={user} />}
             {view === 'users' && user.role === 'admin' && <UserManagementView showNotification={showNotification} userRole={user.role} userToken={user.token} />}
             {view === 'settings' && user.role === 'admin' && (
@@ -1785,6 +1903,12 @@ const DailySummary = ({ refreshKey, user }) => {
   );
 };
 const PDFPreviewModal = ({ url, isOpen, onClose }) => {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setIsMobile(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+  }, []);
+
   if (!isOpen) return null;
 
   return (
@@ -1821,20 +1945,41 @@ const PDFPreviewModal = ({ url, isOpen, onClose }) => {
           </div>
         </div>
         <div className="flex-1 bg-slate-100 p-4">
-          <iframe
-            src={`${url}#toolbar=0`}
-            className="w-full h-full rounded-lg border shadow-inner bg-white"
-            title="PDF Preview"
-          />
+          {isMobile ? (
+            <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-4">
+              <FileText size={64} className="text-slate-300" />
+              <p className="text-center font-medium">La vista previa no está disponible en móvil.</p>
+              <p className="text-sm text-center text-slate-400">Presiona "Descargar" para ver el PDF en tu dispositivo.</p>
+              <button
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.download = `Reporte_Ventas_${new Date().toISOString().split('T')[0]}.pdf`;
+                  link.click();
+                }}
+                className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all"
+              >
+                <Download size={18} /> Descargar PDF
+              </button>
+            </div>
+          ) : (
+            <iframe
+              src={`${url}#toolbar=0`}
+              className="w-full h-full rounded-lg border shadow-inner bg-white"
+              title="PDF Preview"
+            />
+          )}
         </div>
       </div>
     </div>
   );
 };
 
-const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPreviewPDF, user, stockAlertData, setStockAlertData }) => {
+const DashboardView = ({ products, sales, refreshKey, onSendReport, onDownloadPDF, onExportCSV, onPreviewPDF, user, stockAlertData, setStockAlertData, onRestock }) => {
   const [chartData, setChartData] = useState({ salesTrend: [], salesByCategory: [] });
   const [isLoading, setIsLoading] = useState(true);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef(null);
 
   useEffect(() => {
     const fetchChartData = async () => {
@@ -1873,7 +2018,18 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
       .then(setStockAlertData)
       .catch(err => console.error('Silent error fetching alerts:', err.message));
     }
-  }, [user]);
+  }, [user, refreshKey]);
+
+  // Cerrar menú de exportar al hacer clic fuera
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    if (isExportMenuOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isExportMenuOpen]);
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ff6b6b', '#c44dff'];
 
@@ -1894,6 +2050,32 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
     }));
   }, [products]);
 
+  // Productos más vendidos calculados desde ventas reales
+  const mostSoldProducts = useMemo(() => {
+    const salesMap = new Map();
+    (sales || []).forEach(sale => {
+      const key = String(sale.productId);
+      const existing = salesMap.get(key) || { name: sale.productName, totalQty: 0, totalRevenue: 0, image: null };
+      existing.totalQty += parseFloat(sale.quantity) || 0;
+      existing.totalRevenue += (parseFloat(sale.price) || 0) * (parseFloat(sale.quantity) || 0);
+      salesMap.set(key, existing);
+    });
+    // Enriquecer con imagen del producto
+    products.forEach(p => {
+      const entry = salesMap.get(String(p.id));
+      if (entry) entry.image = p.image;
+    });
+    return Array.from(salesMap.entries())
+      .sort((a, b) => b[1].totalQty - a[1].totalQty)
+      .slice(0, 5)
+      .map(([id, data]) => ({ id, ...data }));
+  }, [sales, products]);
+
+  // Stock bajo dinámico (actualizado con cada refresh de products)
+  const lowStockProducts = useMemo(() => {
+    return products.filter(p => p.stock > 0 && p.stock < 10).sort((a, b) => a.stock - b.stock);
+  }, [products]);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
@@ -1908,12 +2090,31 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
           >
             <Eye size={16} /> <span className="hidden sm:inline">Vista Previa</span><span className="sm:hidden">PDF</span>
           </button>
-          <button
-            onClick={onDownloadPDF}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold hover:bg-slate-700 transition-all shadow-md shadow-slate-200"
-          >
-            <FileText size={16} /> <span className="hidden sm:inline">Descargar PDF</span><span className="sm:hidden">Bajar</span>
-          </button>
+          <div className="relative flex-1 sm:flex-none" ref={exportMenuRef}>
+            <button
+              onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+              className="w-full flex items-center justify-center gap-2 bg-slate-600 text-white px-3 py-2 rounded-xl text-sm font-bold hover:bg-slate-700 transition-all shadow-md shadow-slate-200"
+            >
+              <Download size={16} /> <span className="hidden sm:inline">Exportar</span><span className="sm:hidden">Exportar</span>
+              <ChevronDown size={14} className={`transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-200 z-50 py-2 animate-in fade-in zoom-in-95 duration-150">
+                <button
+                  onClick={() => { onDownloadPDF(); setIsExportMenuOpen(false); }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <FileText size={16} className="text-red-500" /> Descargar PDF
+                </button>
+                <button
+                  onClick={() => { onExportCSV(); setIsExportMenuOpen(false); }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <Download size={16} className="text-emerald-500" /> Exportar CSV (Excel)
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={onSendReport}
             className="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-emerald-600 text-white px-3 py-2 rounded-xl text-sm font-bold hover:bg-emerald-700 transition-all shadow-md shadow-emerald-100"
@@ -2053,10 +2254,10 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
             <h3 className="text-lg font-bold text-slate-700 flex items-center gap-2">
               <AlertCircle size={20} className="text-orange-500" /> Stock Bajo
             </h3>
-            <span className="text-xs font-medium px-2 py-1 bg-orange-100 text-orange-700 rounded-full">Atención requerida</span>
+            <span className="text-xs font-medium px-2 py-1 bg-orange-100 text-orange-700 rounded-full">{lowStockProducts.length} productos</span>
           </div>
           <div className="space-y-3">
-            {products.filter(p => p.stock < 10).slice(0, 5).map(p => (
+            {lowStockProducts.slice(0, 5).map(p => (
               <div key={p.id} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center overflow-hidden border border-slate-200">
@@ -2067,10 +2268,18 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
                     <p className="text-xs text-slate-500">Stock actual: <span className="text-red-600 font-bold">{p.stock}</span></p>
                   </div>
                 </div>
-                <button className="text-violet-600 hover:text-violet-800 text-sm font-medium">Reabastecer</button>
+                <button
+                  onClick={() => {
+                    const qty = prompt('¿Cuántas unidades desea agregar al stock?', '10');
+                    if (qty && !isNaN(parseFloat(qty)) && parseFloat(qty) > 0) {
+                      onRestock(p.id, parseFloat(qty));
+                    }
+                  }}
+                  className="text-violet-600 hover:text-violet-800 text-sm font-medium"
+                >Reabastecer</button>
               </div>
             ))}
-            {products.filter(p => p.stock < 10).length === 0 && (
+            {lowStockProducts.length === 0 && (
               <p className="text-slate-500 text-center py-4">Todo el inventario está saludable.</p>
             )}
           </div>
@@ -2082,7 +2291,9 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
             <TrendingUp size={20} className="text-green-500" /> Más Vendidos
           </h3>
           <div className="space-y-4">
-            {products.slice(0, 5).map((p, i) => (
+            {mostSoldProducts.length === 0 ? (
+              <p className="text-slate-500 text-center py-4">Sin ventas registradas aún.</p>
+            ) : mostSoldProducts.map((p, i) => (
               <div key={p.id} className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
@@ -2092,9 +2303,12 @@ const DashboardView = ({ products, refreshKey, onSendReport, onDownloadPDF, onPr
                       <span className="font-bold text-slate-500">{i + 1}</span>
                     )}
                   </div>
-                  <span className="text-sm font-medium text-slate-700">{p.name}</span>
+                  <div>
+                    <span className="text-sm font-medium text-slate-700 block">{p.name}</span>
+                    <span className="text-xs text-slate-400">{p.totalQty} vendidos</span>
+                  </div>
                 </div>
-                <span className="text-sm text-slate-500">{p.stock} unid. restantes</span>
+                <span className="text-sm font-bold text-emerald-600">{formatCurrency(p.totalRevenue)}</span>
               </div>
             ))}
           </div>
@@ -2161,6 +2375,8 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
   const [selectedProductIndex, setSelectedProductIndex] = useState(-1); // Estado para el índice seleccionado en la búsqueda de productos
   const [selectedCartItemIndex, setSelectedCartItemIndex] = useState(-1); // Nuevo estado para el índice seleccionado en el carrito
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [weightProduct, setWeightProduct] = useState(null); // Producto de peso pendiente
+  const [weightQty, setWeightQty] = useState('1'); // Cantidad en libras
   const searchInputRef = useRef(null); // Ref para el campo de búsqueda
 
   useEffect(() => {
@@ -2421,7 +2637,14 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
               {filteredProducts.map((product, index) => (
                 <div
                   key={product.id}
-                  onClick={() => addToCart(product)}
+                  onClick={() => {
+                    if (product.unit_type === 'weight') {
+                      setWeightProduct(product);
+                      setWeightQty('1');
+                    } else {
+                      addToCart(product);
+                    }
+                  }}
                   className={`bg-white p-4 rounded-xl shadow-sm hover:shadow-md cursor-pointer transition-all border ${selectedProductIndex === index ? 'border-2 border-violet-500 ring-2 ring-violet-200' : 'border-slate-200 hover:border-violet-300'}`}
                 >
                   <div className="aspect-square bg-slate-100 rounded-lg mb-3 overflow-hidden flex items-center justify-center relative">
@@ -2436,8 +2659,8 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
                   </div>
                   <h3 className="font-semibold text-slate-800 text-sm line-clamp-2 md:line-clamp-1 mb-1" title={product.name}>{product.name}</h3>
                   <div className="flex justify-between items-center">
-                    <span className="text-xs text-slate-400 truncate max-w-[60px]">Stock: {product.stock}</span>
-                    <span className="font-bold text-violet-600">{formatCurrency(product.price)}</span>
+                    <span className="text-xs text-slate-400 truncate max-w-[60px]">Stock: {product.stock}{product.unit_type === 'weight' ? ' lb' : ''}</span>
+                    <span className="font-bold text-violet-600">{formatCurrency(product.price)}{product.unit_type === 'weight' ? '/lb' : ''}</span>
                   </div>
                 </div>
               ))}
@@ -2487,11 +2710,11 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
                   <p className="text-xs text-violet-600 font-medium">{formatCurrency(item.price)}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => updateQuantity(item.id, -1)} className="p-1 hover:bg-violet-100 rounded text-slate-500">
+                  <button onClick={() => updateQuantity(item.id, item.unit_type === 'weight' ? -0.5 : -1)} className="p-1 hover:bg-violet-100 rounded text-slate-500">
                     <LogOut className="rotate-180" size={14} />
                   </button>
-                  <span className="w-4 text-center text-sm font-bold">{item.quantity}</span>
-                  <button onClick={() => updateQuantity(item.id, 1)} className="p-1 hover:bg-violet-100 rounded text-slate-500">
+                  <span className="w-10 text-center text-sm font-bold">{item.unit_type === 'weight' ? `${item.quantity} lb` : item.quantity}</span>
+                  <button onClick={() => updateQuantity(item.id, item.unit_type === 'weight' ? 0.5 : 1)} className="p-1 hover:bg-violet-100 rounded text-slate-500">
                     <Plus size={14} />
                   </button>
                 </div>
@@ -2550,6 +2773,83 @@ const POSView = ({ products, cart, addToCart, removeFromCart, updateQuantity, pr
           onScan={handleScan}
           onClose={() => setIsScannerOpen(false)}
         />
+      )}
+
+      {/* Modal para producto de peso (arroz, azúcar, etc.) */}
+      {weightProduct && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 animate-in zoom-in-95">
+            <h3 className="text-xl font-bold mb-2">{weightProduct.name}</h3>
+            <p className="text-slate-500 text-sm mb-4">Ingrese la cantidad en libras</p>
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm font-medium text-slate-600">Precio por lb:</span>
+                <span className="font-bold text-violet-600">{formatCurrency(weightProduct.price)}</span>
+              </div>
+              <label className="text-sm font-medium text-slate-700 mb-1 block">Cantidad (libras):</label>
+              <input
+                type="number"
+                step="0.25"
+                min="0.25"
+                max={weightProduct.stock}
+                className="w-full border-2 border-violet-200 rounded-xl py-3 px-4 text-2xl font-bold text-violet-700 focus:border-violet-500 outline-none transition-all"
+                value={weightQty}
+                onChange={(e) => setWeightQty(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const qty = parseFloat(weightQty);
+                    if (qty > 0 && qty <= weightProduct.stock) {
+                      addToCart(weightProduct, qty);
+                      setWeightProduct(null);
+                    }
+                  }
+                }}
+              />
+              <div className="flex gap-2 mt-3 flex-wrap">
+                {[0.5, 1, 1.5, 2, 3, 5].map(qty => (
+                  <button
+                    key={qty}
+                    onClick={() => setWeightQty(String(qty))}
+                    className={`px-3 py-1 rounded-lg text-sm font-bold transition-colors ${parseFloat(weightQty) === qty ? 'bg-violet-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    {qty} lb
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="bg-slate-50 p-3 rounded-lg mb-4">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-slate-600">Total:</span>
+                <span className="text-xl font-bold text-emerald-600">
+                  {formatCurrency(weightProduct.price * parseFloat(weightQty || 0))}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setWeightProduct(null)}
+                className="flex-1 py-3 border-2 border-slate-200 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const qty = parseFloat(weightQty);
+                  if (qty > 0 && qty <= weightProduct.stock) {
+                    addToCart(weightProduct, qty);
+                    setWeightProduct(null);
+                  } else {
+                    showNotification('Cantidad inválida o excede stock', 'error');
+                  }
+                }}
+                className="flex-1 py-3 bg-violet-600 text-white rounded-xl font-bold hover:bg-violet-700 transition-colors shadow-lg"
+              >
+                Agregar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -2747,7 +3047,7 @@ const InventoryView = ({
     handleEditProduct({
       ...editingProduct,
       price: parseFloat(editingProduct.price),
-      stock: parseInt(editingProduct.stock),
+      stock: parseFloat(editingProduct.stock),
       manual_code: editingProduct.manual_code || '' // Ensure manual_code is passed
     });
     handleCloseEditModal();
@@ -2773,7 +3073,7 @@ const InventoryView = ({
     handleAddProduct({
       ...newProd,
       price: parseFloat(newProd.price),
-      stock: parseInt(newProd.stock),
+      stock: parseFloat(newProd.stock),
     });
     setIsModalOpen(false);
     setNewProd({ name: '', price: '', stock: '', category: 'General', classification: 'B', manual_code: '', image: null, supplier_id: '' });
@@ -3119,16 +3419,16 @@ const HistoryView = ({ sales, onCancelSale, onShowReceipt, timeOffset }) => {
   const groupedSales = useMemo(() => {
     const salesMap = new Map();
     sales.forEach(item => {
-      const groupKey = `${item.transactionId}-${item.date}`;
+      const groupKey = String(item.transactionId);
       if (!salesMap.has(groupKey)) {
         salesMap.set(groupKey, {
-          id: groupKey, // Usamos esta clave compuesta para UI expasion
-          transactionId: item.transactionId, // Conservar ID real de la venta
+          id: groupKey,
+          transactionId: item.transactionId,
           date: item.date,
-          seller: item.seller || "Vendedor por Defecto", // Asumir vendedor si no viene del backend por transacción
-          paymentMethod: item.paymentMethod, // Tomar del primer item
-          receivedAmount: item.receivedAmount, // Tomar del primer item
-          change: item.changeAmount, // Tomar del primer item
+          seller: item.seller || "Vendedor por Defecto",
+          paymentMethod: item.paymentMethod,
+          receivedAmount: item.receivedAmount,
+          change: item.changeAmount,
           items: [],
           total: 0,
         });
@@ -3138,7 +3438,6 @@ const HistoryView = ({ sales, onCancelSale, onShowReceipt, timeOffset }) => {
       transaction.total += item.price * item.quantity;
       salesMap.set(groupKey, transaction);
     });
-    // Convertir el mapa a un array y ordenar por fecha
     return Array.from(salesMap.values()).sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [sales]);
 
@@ -3353,7 +3652,7 @@ const SuppliersView = ({ suppliers, onAdd, onEdit, onDelete, onPurchase }) => {
   );
 };
 
-const CashClosingView = ({ timeOffset, user }) => {
+const CashClosingView = ({ timeOffset, user, onRefresh }) => {
   const [data, setData] = useState({
     date: getNicaraguaDateString(timeOffset),
     starting_cash: 0,
@@ -3446,6 +3745,7 @@ const CashClosingView = ({ timeOffset, user }) => {
       if (response.ok) {
         alert(isClosing ? "Caja cerrada con éxito" : "Borrador guardado");
         fetchData();
+        if (onRefresh) onRefresh();
       } else {
         const errData = await response.json().catch(() => ({}));
         alert("Error del servidor: " + (errData.message || "No se pudo guardar el cierre"));
@@ -3541,6 +3841,82 @@ const CashClosingView = ({ timeOffset, user }) => {
           {isClosed && (
             <div className="bg-emerald-500 text-white p-6 rounded-2xl text-center font-black text-xl shadow-lg">
               ESTA CAJA YA FUE CERRADA
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DailySalesView = ({ user }) => {
+  const [dailySales, setDailySales] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchDailySales = async () => {
+      if (!user || !user.token) return;
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/daily-sales`, {
+          headers: {
+            'Authorization': `Bearer ${user.token}`,
+            'x-user-role': user.role
+          }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setDailySales(data);
+        }
+      } catch (error) {
+        console.error("Error fetching daily sales:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchDailySales();
+  }, [user]);
+
+  if (loading) return <div className="p-8 text-center text-slate-400">Cargando ventas diarias...</div>;
+
+  const totalGeneral = dailySales.reduce((sum, d) => sum + d.totalSales, 0);
+
+  return (
+    <div className="animate-in fade-in">
+      <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
+        <div className="bg-emerald-600 p-8 text-white">
+          <h2 className="text-3xl font-black">Ventas Diarias</h2>
+          <p className="text-emerald-100 opacity-80 mt-1">Resumen de ventas por día</p>
+        </div>
+        <div className="p-8">
+          <div className="mb-6 bg-emerald-50 p-4 rounded-xl border border-emerald-100">
+            <div className="flex justify-between items-center">
+              <span className="font-bold text-emerald-800">Total General:</span>
+              <span className="text-2xl font-black text-emerald-600">{formatCurrency(totalGeneral)}</span>
+            </div>
+          </div>
+          {dailySales.length === 0 ? (
+            <p className="text-center text-slate-400 py-8">No hay ventas registradas.</p>
+          ) : (
+            <div className="space-y-3">
+              {dailySales.map(day => (
+                <div key={day.date} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${day.isClosed ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}>
+                      <Calendar size={20} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-800">{day.date}</p>
+                      <p className="text-xs text-slate-500">{day.totalTransactions} transacciones</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-black text-slate-800">{formatCurrency(day.totalSales)}</p>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${day.isClosed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {day.isClosed ? 'Cerrado' : 'Abierto'}
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
